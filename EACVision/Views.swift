@@ -194,6 +194,10 @@ struct CameraDetailView: View {
                         Text(streamMessage.isEmpty ? "Collegamento al live… Anteprima disponibile." : streamMessage)
                             .font(.caption).foregroundStyle(.white)
                             .padding(10).background(panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
+                    } else if streamMode == 1 {
+                        Text("Formato H.264 compatibile attivo; l'audio non è disponibile in questo flusso.")
+                            .font(.caption).foregroundStyle(.white)
+                            .padding(10).background(panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
                     }
                     Spacer()
                     HStack(spacing: 9) {
@@ -203,6 +207,7 @@ struct CameraDetailView: View {
                         } label: {
                             Label(audioOn ? "Audio attivo" : "Audio", systemImage: audioOn ? "speaker.wave.2" : "speaker.slash")
                         }
+                        .disabled(streamMode == 1)
                         Button { streamMode = 0; start() } label: { Label("Ricollega", systemImage: "arrow.clockwise") }
                         NavigationLink(value: AppPage.recordings) {
                             Label("Archivio", systemImage: "clock.arrow.circlepath")
