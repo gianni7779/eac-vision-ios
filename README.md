@@ -9,7 +9,7 @@ Client iOS per **EAC Vision Home Assistant** e **EAC Vision AI Home Assistant**.
 - Inserisci il codice delle app mostrato nelle impostazioni di EAC Vision su HA. Il codice viene conservato nel portachiavi iOS.
 - Con DuckDNS serve un proxy HTTPS verso `/eacnvr/`, con supporto HLS/MP4 e WebSocket. Il normale URL di Home Assistant sulla porta 8123 non basta.
 
-Il live usa il formato HLS/fMP4 di go2rtc, inoltrato dal componente HA. Il video H.264/H.265 e l'audio dipendono dai codec della telecamera e dal modello di iPhone. Le registrazioni usano i file MP4 dell'archivio EAC Vision, con la timeline del giorno e un lettore di anteprima separato mentre si sposta il cursore. Gli eventi AI sono disponibili solo nell'edizione AI.
+Il live usa il formato HLS/fMP4 di go2rtc, inoltrato dal componente HA. Il video H.264/H.265 e l'audio dipendono dai codec della telecamera e dal modello di iPhone. Le registrazioni usano i file MP4 dell'archivio EAC Vision: la timeline copre l'intera giornata, mostra un'anteprima mentre sposti il cursore e passa automaticamente al file successivo durante la riproduzione. Gli eventi AI sono disponibili solo nell'edizione AI.
 
 ## Build e IPA
 

@@ -1,8 +1,9 @@
 import AVKit
+import Combine
 import SwiftUI
 import UIKit
 
-private let background = Color(red: 0.025, green: 0.08, blue: 0.13)
+private let appBackground = Color(red: 0.025, green: 0.08, blue: 0.13)
 private let panel = Color(red: 0.07, green: 0.18, blue: 0.26)
 
 struct CamerasView: View {
@@ -35,7 +36,7 @@ struct CamerasView: View {
                 }
             }.padding()
         }
-        .background(background)
+        .background(appBackground)
         .navigationTitle("Telecamere")
         .navigationDestination(for: NvrCamera.self) { CameraDetailView(camera: $0) }
         .refreshable { await store.refreshCameras() }
@@ -67,7 +68,7 @@ struct CameraDetailView: View {
             Spacer()
         }
         .padding()
-        .background(background)
+        .background(appBackground)
         .navigationTitle(camera.name)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { start() }
@@ -156,13 +157,24 @@ struct RecordingsView: View {
                 if segments.isEmpty { ContentUnavailableView("Nessun video", systemImage: "clock", description: Text("Scegli una camera e un giorno con registrazioni.")) }
             }.padding()
         }
-        .background(background)
+        .background(appBackground)
         .navigationTitle("Registrazioni")
         .task(id: store.cameras) {
             if cameraId.isEmpty, let first = store.cameras.first { cameraId = first.id }
         }
         .onChange(of: cameraId) { _, _ in Task { await loadDays() } }
         .onChange(of: day) { _, _ in Task { await loadSegments() } }
+        .onReceive(Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()) { _ in
+            guard !dragging, let segment = segments.first(where: { $0.name == activeName }),
+                  player.currentItem != nil else { return }
+            seconds = max(0, min(86399, segment.start - dayStart + player.currentTime().seconds))
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AVPlayerItem.didPlayToEndTimeNotification)) { notice in
+            guard let ended = notice.object as? AVPlayerItem, ended === player.currentItem,
+                  let index = segments.firstIndex(where: { $0.name == activeName }),
+                  index + 1 < segments.count else { return }
+            playSegment(segments[index + 1], offset: 0)
+        }
         .onDisappear { player.pause(); previewPlayer.pause() }
     }
 
@@ -192,8 +204,13 @@ struct RecordingsView: View {
     }
 
     private func play(at value: Double) {
-        guard let segment = segment(at: value), let url = store.endpoint(segment.url) else { return }
+        guard let segment = segment(at: value) else { return }
         let offset = max(0, min(segment.dur - 0.1, dayStart + value - segment.start))
+        playSegment(segment, offset: offset)
+    }
+
+    private func playSegment(_ segment: NvrSegment, offset: Double) {
+        guard let url = store.endpoint(segment.url) else { return }
         if activeName != segment.name {
             activeName = segment.name
             player.replaceCurrentItem(with: AVPlayerItem(url: url))
@@ -219,6 +236,7 @@ struct RecordingsView: View {
         do {
             days = try await store.days(for: camera)
             day = days.first?.day ?? ""
+            if day.isEmpty { segments = []; player.pause(); player.replaceCurrentItem(with: nil) }
             error = ""
         } catch { self.error = error.localizedDescription }
     }
@@ -226,6 +244,8 @@ struct RecordingsView: View {
     private func loadSegments() async {
         guard let camera, !day.isEmpty else { return }
         do {
+            player.pause()
+            player.replaceCurrentItem(with: nil)
             segments = try await store.segments(for: camera, day: day)
             segments = segments.filter { $0.live != true && $0.dur > 0 }.sorted { $0.start < $1.start }
             activeName = ""
@@ -261,7 +281,7 @@ struct EventsView: View {
                 if events.isEmpty && error.isEmpty { ContentUnavailableView("Nessun evento", systemImage: "sparkles", description: Text("L'edizione AI mostra qui persone, veicoli e animali rilevati.")) }
             }.padding()
         }
-        .background(background)
+        .background(appBackground)
         .navigationTitle("Eventi AI")
         .task { await refresh() }
         .refreshable { await refresh() }
@@ -269,7 +289,7 @@ struct EventsView: View {
 
     private func refresh() async {
         do { events = try await store.events(); error = "" }
-        catch { error = "Gli eventi AI sono disponibili con EAC Vision AI su mini PC. \(error.localizedDescription)" }
+        catch { self.error = "Gli eventi AI sono disponibili con EAC Vision AI su mini PC. \(error.localizedDescription)" }
     }
 }
 
