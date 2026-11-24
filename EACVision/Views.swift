@@ -26,7 +26,7 @@ struct CamerasView: View {
                                 }
                                 .frame(maxWidth: .infinity).aspectRatio(16/9, contentMode: .fit)
                                 Text(camera.name).font(.subheadline.bold()).lineLimit(1).padding(.horizontal, 8)
-                                Text(camera.recording == true ? "● REC" : "LIVE").font(.caption2).foregroundStyle(camera.recording == true ? .red : .cyan).padding(.horizontal, 8).padding(.bottom, 8)
+                                Text(camera.recording == true ? "● REC" : "LIVE").font(.caption2).foregroundStyle(camera.recording == true ? Color.red : Color.cyan).padding(.horizontal, 8).padding(.bottom, 8)
                             }
                             .background(panel, in: RoundedRectangle(cornerRadius: 12))
                         }
@@ -83,7 +83,7 @@ struct CameraDetailView: View {
 }
 
 final class PlayerLayerView: UIView {
-    override static var layerClass: AnyClass { AVPlayerLayer.self }
+    override class var layerClass: AnyClass { AVPlayerLayer.self }
     var videoLayer: AVPlayerLayer { layer as! AVPlayerLayer }
 }
 
@@ -171,8 +171,8 @@ struct RecordingsView: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(.white.opacity(0.12))
                 ForEach(segments, id: \.name) { segment in
-                    let left = max(0, (segment.start - dayStart) / 86400)
-                    let width = max(0, min(segment.dur / 86400, 1 - left))
+                    let left = CGFloat(max(0, (segment.start - dayStart) / 86400))
+                    let width = CGFloat(max(0, min(segment.dur / 86400, Double(1 - left))))
                     Capsule().fill(.cyan).frame(width: proxy.size.width * width)
                         .offset(x: proxy.size.width * left)
                 }
