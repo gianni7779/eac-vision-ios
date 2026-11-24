@@ -287,10 +287,15 @@ private struct CameraSnapshot: View {
     var body: some View {
         AsyncImage(url: store.endpoint("/eacnvr/snapshot", query: [
             URLQueryItem(name: "cam", value: camera.id), URLQueryItem(name: "t", value: String(tick))
-        ])) { image in
-            image.resizable().scaledToFit()
-        } placeholder: {
-            Color.black.overlay { ProgressView().tint(accent) }
+        ])) { phase in
+            switch phase {
+            case .success(let image): image.resizable().scaledToFit()
+            case .failure: Color.black.overlay {
+                Label("Istantanea non disponibile", systemImage: "video.slash")
+                    .font(.caption2).foregroundStyle(dim).padding(8)
+            }
+            default: Color.black.overlay { ProgressView().tint(accent) }
+            }
         }
     }
 }
