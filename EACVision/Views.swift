@@ -13,6 +13,7 @@ private let line = Color(red: 95/255, green: 155/255, blue: 190/255).opacity(0.3
 struct CamerasView: View {
     @EnvironmentObject private var store: NvrStore
     let onNavigate: (AppPage) -> Void
+    @State private var openedCamera: NvrCamera?
     private let columns = [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)]
 
     var body: some View {
@@ -37,7 +38,7 @@ struct CamerasView: View {
                 ScrollView {
                     LazyVGrid(columns: store.cameras.count == 1 ? [GridItem(.flexible())] : columns, spacing: 6) {
                         ForEach(store.cameras) { camera in
-                            NavigationLink(value: camera) {
+                            Button { openedCamera = camera } label: {
                                 CameraTile(camera: camera, live: (store.cameras.firstIndex(of: camera) ?? 0) < 4)
                             }
                                 .buttonStyle(.plain)
@@ -49,6 +50,20 @@ struct CamerasView: View {
         }
         .background(appBackground)
         .toolbar(.hidden, for: .navigationBar)
+        .fullScreenCover(item: $openedCamera) { camera in
+            NavigationStack {
+                CameraDetailView(camera: camera)
+                    .navigationDestination(for: AppPage.self) { page in
+                        switch page {
+                        case .recordings: RecordingsView()
+                        case .events: EventsView()
+                        case .settings: ConnectionView()
+                        }
+                    }
+            }
+            .environmentObject(store)
+            .preferredColorScheme(.dark)
+        }
     }
 
     private var header: some View {
@@ -222,7 +237,10 @@ struct CameraDetailView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .onAppear { start() }
+        .onAppear {
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+            start()
+        }
         .onDisappear { player.pause(); player.replaceCurrentItem(with: nil) }
         .onReceive(Timer.publish(every: 3, on: .main, in: .common).autoconnect()) { _ in
             if !streamReady { snapshotTick += 1 }
@@ -320,6 +338,10 @@ struct RecordingsView: View {
     @State private var dragging = false
     @State private var lastPreview = Date.distantPast
     @State private var error = ""
+    @State private var audioOn = true
+    @State private var zoom = 1.0
+    @State private var speed = 1.0
+    @State private var playing = false
 
     private var camera: NvrCamera? { store.cameras.first { $0.id == cameraId } }
     private var dayStart: Double {
@@ -360,11 +382,38 @@ struct RecordingsView: View {
                         }
                     }
                 }
-                VideoPlayer(player: player)
+                ZStack {
+                    Color.black
+                    PlayerSurface(player: player)
+                        .scaleEffect(zoom)
+                }
                     .aspectRatio(16/9, contentMode: .fit)
-                    .background(.black)
+                    .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(line))
+                ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) {
+                    Button(playing ? "Pausa" : "Riprendi", systemImage: playing ? "pause.fill" : "play.fill") {
+                        if playing { player.pause(); playing = false }
+                        else { player.play(); player.rate = Float(speed); playing = true }
+                    }
+                    Button("−10 s", systemImage: "gobackward.10") { play(at: max(0, seconds - 10)) }
+                    Button("+10 s", systemImage: "goforward.10") { play(at: min(86399, seconds + 10)) }
+                    Button(audioOn ? "Audio" : "Muto", systemImage: audioOn ? "speaker.wave.2" : "speaker.slash") {
+                        audioOn.toggle(); player.isMuted = !audioOn
+                    }
+                } }.buttonStyle(.bordered).font(.caption)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        Button("Velocità \(speed.formatted())×", systemImage: "speedometer") {
+                            let speeds = [0.5, 1.0, 2.0, 4.0]
+                            speed = speeds[(speeds.firstIndex(of: speed).map { $0 + 1 } ?? 1) % speeds.count]
+                            if player.rate > 0 { player.rate = Float(speed) }
+                        }
+                        Button("Zoom −", systemImage: "minus.magnifyingglass") { zoom = max(1, zoom - 0.5) }
+                        Button("Zoom +", systemImage: "plus.magnifyingglass") { zoom = min(4, zoom + 0.5) }
+                        Button("Adatta", systemImage: "arrow.down.right.and.arrow.up.left") { zoom = 1 }
+                    }.buttonStyle(.bordered).font(.caption)
+                }
                 Text(dragging ? "Anteprima · \(clock(seconds))" : "\(day) · \(clock(seconds))")
                     .font(.headline.monospacedDigit())
                 if dragging {
@@ -392,6 +441,25 @@ struct RecordingsView: View {
                         eventLegend("Movimento", color: .gray)
                     }
                 }.font(.caption2).foregroundStyle(dim)
+                if !recordingEvents.isEmpty {
+                    Text("VAI A UN EVENTO").font(.caption.bold()).foregroundStyle(dim)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(recordingEvents) { event in
+                                Button {
+                                    let at = event.start / 1000 - dayStart
+                                    seconds = at
+                                    play(at: at)
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Circle().fill(eventColor(event.label)).frame(width: 7, height: 7)
+                                        Text("\(event.label.capitalized) \(clock(event.start / 1000 - dayStart))")
+                                    }
+                                }.buttonStyle(.bordered).font(.caption)
+                            }
+                        }
+                    }
+                }
                 if segments.isEmpty { ContentUnavailableView("Nessun video", systemImage: "clock", description: Text("Scegli una camera e un giorno con registrazioni.")) }
             }.padding()
         }
@@ -414,7 +482,8 @@ struct RecordingsView: View {
                   index + 1 < segments.count else { return }
             playSegment(segments[index + 1], offset: 0)
         }
-        .onDisappear { player.pause(); previewPlayer.pause() }
+        .onDisappear { player.pause(); previewPlayer.pause(); playing = false }
+        .onAppear { try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback) }
     }
 
     private var coverage: some View {
@@ -476,7 +545,10 @@ struct RecordingsView: View {
             player.replaceCurrentItem(with: AVPlayerItem(url: url))
         }
         player.seek(to: CMTime(seconds: offset, preferredTimescale: 600))
+        player.isMuted = !audioOn
         player.play()
+        player.rate = Float(speed)
+        playing = true
     }
 
     private func showPreview(_ value: Double, force: Bool = false) {
@@ -493,8 +565,11 @@ struct RecordingsView: View {
 
     private func loadDays() async {
         guard let camera else { return }
+        let selectedCamera = camera.id
         do {
-            days = try await store.days(for: camera)
+            let loaded = try await store.days(for: camera)
+            guard cameraId == selectedCamera else { return }
+            days = loaded
             day = days.first?.day ?? ""
             if day.isEmpty { segments = []; recordingEvents = []; player.pause(); player.replaceCurrentItem(with: nil) }
             error = ""
@@ -503,13 +578,17 @@ struct RecordingsView: View {
 
     private func loadSegments() async {
         guard let camera, !day.isEmpty else { return }
+        let selectedCamera = camera.id, selectedDay = day
         do {
             player.pause()
+            playing = false
             player.replaceCurrentItem(with: nil)
-            segments = try await store.segments(for: camera, day: day)
+            let loaded = try await store.segments(for: camera, day: selectedDay)
+            guard cameraId == selectedCamera && day == selectedDay else { return }
+            segments = loaded
             segments = segments.filter { $0.live != true && $0.dur > 0 }.sorted { $0.start < $1.start }
             let dayStartMs = dayStart * 1000
-            recordingEvents = ((try? await store.events(for: camera, day: day)) ?? [])
+            recordingEvents = ((try? await store.events(for: camera, day: selectedDay)) ?? [])
                 .filter { $0.cam == camera.id && $0.start >= dayStartMs && $0.start < dayStartMs + 86400000 }
             activeName = ""
             previewName = ""
@@ -606,6 +685,15 @@ struct ConnectionView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if !error.isEmpty { Text(error).foregroundStyle(.orange) }
                 if store.connected { Label("Collegato a \(store.name)", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
+                if store.connected {
+                    NavigationLink {
+                        NotificationsSettingsView()
+                    } label: {
+                        Label("Notifiche di rilevamento", systemImage: "bell.badge")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12).background(panel2, in: RoundedRectangle(cornerRadius: 10))
+                    }
+                }
                 Divider().overlay(line)
                 Text("COLLEGAMENTO FUORI CASA").font(.system(size: 11, weight: .bold))
                     .tracking(1.2).foregroundStyle(accent)
@@ -623,5 +711,90 @@ struct ConnectionView: View {
         .navigationTitle("Impostazioni")
         .toolbar(.visible, for: .navigationBar)
         .onAppear { address = store.address; key = store.key }
+    }
+}
+
+struct NotificationsSettingsView: View {
+    @EnvironmentObject private var store: NvrStore
+    @State private var targets: [String] = []
+    @State private var subscriptions: [String: NotifyChoice] = [:]
+    @State private var target = ""
+    @State private var enabled = false
+    @State private var person = true
+    @State private var animal = true
+    @State private var vehicle = true
+    @State private var busy = false
+    @State private var status = ""
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Avvisi sul telefono", systemImage: "bell.badge.fill")
+                    .font(.title2.bold()).foregroundStyle(accent)
+                Text("EAC Vision AI invia gli avvisi tramite Home Assistant Companion anche quando EAC Vision è chiusa. Scegli questo iPhone e attiva i tipi di rilevamento.")
+                    .foregroundStyle(dim)
+                if targets.isEmpty {
+                    Text("Nessun dispositivo Companion disponibile. Controlla che l'app Home Assistant sia collegata e abbia il permesso di mostrare notifiche.")
+                        .foregroundStyle(.orange)
+                } else {
+                    Picker("Dispositivo", selection: $target) {
+                        ForEach(targets, id: \.self) { item in
+                            Text(item.replacingOccurrences(of: "notify.mobile_app_", with: "").replacingOccurrences(of: "_", with: " ")).tag(item)
+                        }
+                    }.pickerStyle(.menu)
+                    Toggle("Ricevi notifiche", isOn: $enabled)
+                    Toggle("Persone", isOn: $person)
+                    Toggle("Animali", isOn: $animal)
+                    Toggle("Veicoli", isOn: $vehicle)
+                    Button(busy ? "Salvataggio…" : "Salva avvisi") { Task { await save() } }
+                        .buttonStyle(.borderedProminent).tint(accent)
+                        .disabled(busy || target.isEmpty || !(person || animal || vehicle))
+                    Button("Invia notifica di prova", systemImage: "bell") { Task { await test() } }
+                        .buttonStyle(.bordered).disabled(busy || target.isEmpty)
+                }
+                if !status.isEmpty { Text(status).font(.footnote).foregroundStyle(status.hasPrefix("Errore") ? Color.orange : Color.green) }
+            }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(appBackground)
+        .navigationTitle("Notifiche")
+        .task { await load() }
+        .onChange(of: target) { _, value in
+            let choice = subscriptions[value]
+            enabled = choice?.enabled ?? false
+            person = choice?.labels.contains("persona") ?? true
+            animal = choice?.labels.contains("animale") ?? true
+            vehicle = choice?.labels.contains("veicolo") ?? true
+        }
+    }
+
+    private func load() async {
+        do {
+            let settings = try await store.notifySettings()
+            targets = settings.targets
+            subscriptions = settings.subscriptions
+            let saved = UserDefaults.standard.string(forKey: "notify-device") ?? ""
+            target = targets.contains(saved) ? saved : (targets.first ?? "")
+            status = ""
+        } catch { status = "Errore: \(error.localizedDescription)" }
+    }
+
+    private func save() async {
+        busy = true
+        let labels = [(person, "persona"), (animal, "animale"), (vehicle, "veicolo")]
+            .compactMap { $0.0 ? $0.1 : nil }
+        do {
+            let updated = try await store.saveNotify(target: target, enabled: enabled, labels: labels)
+            subscriptions = updated.subscriptions
+            UserDefaults.standard.set(target, forKey: "notify-device")
+            status = "Impostazioni salvate"
+        } catch { status = "Errore: \(error.localizedDescription)" }
+        busy = false
+    }
+
+    private func test() async {
+        busy = true
+        do { try await store.testNotify(target: target); status = "Notifica di prova inviata a Home Assistant Companion" }
+        catch { status = "Errore: \(error.localizedDescription)" }
+        busy = false
     }
 }

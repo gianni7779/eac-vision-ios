@@ -41,6 +41,16 @@ struct NvrEvent: Identifiable, Decodable {
     let end: Double?
 }
 
+struct NotifyChoice: Codable {
+    let enabled: Bool
+    let labels: [String]
+}
+
+struct NotifySettings: Decodable {
+    let targets: [String]
+    let subscriptions: [String: NotifyChoice]
+}
+
 struct NvrError: LocalizedError {
     let message: String
     var errorDescription: String? { message }
@@ -169,6 +179,20 @@ final class NvrStore: ObservableObject {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    private func post<T: Decodable>(_ path: String, body: [String: Any]) async throws -> T {
+        guard let address = url(path) else { throw NvrError(message: "NVR non configurato") }
+        var request = URLRequest(url: address)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 20
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw NvrError(message: "Impossibile salvare le notifiche. Aggiorna EAC Vision AI su Home Assistant.")
+        }
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
     private func selectView(_ cameras: [NvrCamera], from views: [NvrView]) -> [NvrCamera] {
         guard let view = views.first else { return cameras }
         viewName = view.name
@@ -238,5 +262,17 @@ final class NvrStore: ObservableObject {
         try await fetch("/eacnvr/events", query: [URLQueryItem(name: "cam", value: camera.id),
                                                   URLQueryItem(name: "day", value: day),
                                                   URLQueryItem(name: "limit", value: "500")])
+    }
+
+    func notifySettings() async throws -> NotifySettings { try await fetch("/eacnvr/notify") }
+
+    func saveNotify(target: String, enabled: Bool, labels: [String]) async throws -> NotifySettings {
+        try await post("/eacnvr/notify", body: ["target": target, "enabled": enabled, "labels": labels])
+    }
+
+    func testNotify(target: String) async throws {
+        struct Sent: Decodable { let sent: Bool }
+        let result: Sent = try await post("/eacnvr/notify-test", body: ["target": target])
+        guard result.sent else { throw NvrError(message: "Notifica non inviata") }
     }
 }
