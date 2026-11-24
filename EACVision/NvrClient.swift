@@ -233,4 +233,10 @@ final class NvrStore: ObservableObject {
     func events() async throws -> [NvrEvent] {
         try await fetch("/eacnvr/events", query: [URLQueryItem(name: "limit", value: "100")])
     }
+
+    func events(for camera: NvrCamera, day: String) async throws -> [NvrEvent] {
+        try await fetch("/eacnvr/events", query: [URLQueryItem(name: "cam", value: camera.id),
+                                                  URLQueryItem(name: "day", value: day),
+                                                  URLQueryItem(name: "limit", value: "500")])
+    }
 }

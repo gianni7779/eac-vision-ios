@@ -311,6 +311,7 @@ struct RecordingsView: View {
     @State private var day = ""
     @State private var days: [NvrDay] = []
     @State private var segments: [NvrSegment] = []
+    @State private var recordingEvents: [NvrEvent] = []
     @State private var player = AVPlayer()
     @State private var previewPlayer = AVPlayer()
     @State private var activeName = ""
@@ -381,8 +382,13 @@ struct RecordingsView: View {
                 .tint(accent)
                 HStack { Text("00:00"); Spacer(); Text("Trascina per vedere l'anteprima"); Spacer(); Text("24:00") }
                     .font(.caption2).foregroundStyle(.secondary)
-                Text("Parti azzurre: video disponibile").font(.caption).foregroundStyle(dim)
+                Text("Azzurro: video disponibile · Segni colorati: eventi AI").font(.caption).foregroundStyle(dim)
                 coverage
+                HStack(spacing: 16) {
+                    eventLegend("Persone", color: .orange)
+                    eventLegend("Animali", color: .green)
+                    eventLegend("Veicoli", color: .purple)
+                }.font(.caption2).foregroundStyle(dim)
                 if segments.isEmpty { ContentUnavailableView("Nessun video", systemImage: "clock", description: Text("Scegli una camera e un giorno con registrazioni.")) }
             }.padding()
         }
@@ -418,8 +424,28 @@ struct RecordingsView: View {
                     Capsule().fill(accent).frame(width: proxy.size.width * width)
                         .offset(x: proxy.size.width * left)
                 }
+                ForEach(recordingEvents) { event in
+                    let position = (event.start / 1000 - dayStart) / 86400
+                    if position >= 0 && position < 1 {
+                        Capsule().fill(eventColor(event.label)).frame(width: 4, height: 16)
+                            .offset(x: proxy.size.width * CGFloat(position))
+                    }
+                }
             }
-        }.frame(height: 10)
+        }.frame(height: 16)
+    }
+
+    private func eventLegend(_ name: String, color: Color) -> some View {
+        HStack(spacing: 4) { Circle().fill(color).frame(width: 8, height: 8); Text(name) }
+    }
+
+    private func eventColor(_ label: String) -> Color {
+        switch label {
+        case "persona": return .orange
+        case "animale": return .green
+        case "veicolo": return .purple
+        default: return .gray
+        }
     }
 
     private func clock(_ value: Double) -> String {
@@ -466,7 +492,7 @@ struct RecordingsView: View {
         do {
             days = try await store.days(for: camera)
             day = days.first?.day ?? ""
-            if day.isEmpty { segments = []; player.pause(); player.replaceCurrentItem(with: nil) }
+            if day.isEmpty { segments = []; recordingEvents = []; player.pause(); player.replaceCurrentItem(with: nil) }
             error = ""
         } catch { self.error = error.localizedDescription }
     }
@@ -478,6 +504,9 @@ struct RecordingsView: View {
             player.replaceCurrentItem(with: nil)
             segments = try await store.segments(for: camera, day: day)
             segments = segments.filter { $0.live != true && $0.dur > 0 }.sorted { $0.start < $1.start }
+            let dayStartMs = dayStart * 1000
+            recordingEvents = ((try? await store.events(for: camera, day: day)) ?? [])
+                .filter { $0.cam == camera.id && $0.start >= dayStartMs && $0.start < dayStartMs + 86400000 }
             activeName = ""
             previewName = ""
             if let first = segments.first {
