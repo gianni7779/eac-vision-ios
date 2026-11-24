@@ -1,0 +1,21 @@
+name: EACVision
+options:
+  bundleIdPrefix: it.eac
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  EACVision:
+    type: application
+    platform: iOS
+    sources:
+      - EACVision
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: it.eac.vision.ios
+        INFOPLIST_FILE: EACVision/Info.plist
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: "NO"
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        CODE_SIGN_STYLE: Manual
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
