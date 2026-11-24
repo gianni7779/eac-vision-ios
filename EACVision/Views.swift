@@ -384,10 +384,13 @@ struct RecordingsView: View {
                     .font(.caption2).foregroundStyle(.secondary)
                 Text("Azzurro: video disponibile · Segni colorati: eventi AI").font(.caption).foregroundStyle(dim)
                 coverage
-                HStack(spacing: 16) {
-                    eventLegend("Persone", color: .orange)
-                    eventLegend("Animali", color: .green)
-                    eventLegend("Veicoli", color: .purple)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 16) {
+                        eventLegend("Persone", color: .orange)
+                        eventLegend("Animali", color: .green)
+                        eventLegend("Veicoli", color: .purple)
+                        eventLegend("Movimento", color: .gray)
+                    }
                 }.font(.caption2).foregroundStyle(dim)
                 if segments.isEmpty { ContentUnavailableView("Nessun video", systemImage: "clock", description: Text("Scegli una camera e un giorno con registrazioni.")) }
             }.padding()
@@ -444,6 +447,7 @@ struct RecordingsView: View {
         case "persona": return .orange
         case "animale": return .green
         case "veicolo": return .purple
+        case "movimento": return .gray
         default: return .gray
         }
     }
