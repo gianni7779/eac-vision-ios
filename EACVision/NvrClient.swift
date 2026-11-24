@@ -14,6 +14,13 @@ struct CameraListResponse: Decodable {
     let cams: [NvrCamera]
 }
 
+struct NvrView: Decodable {
+    let id: String
+    let name: String
+    let layout: String
+    let slots: [String]
+}
+
 struct NvrDay: Decodable, Hashable { let day: String }
 
 struct NvrSegment: Decodable, Hashable {
@@ -66,6 +73,8 @@ private enum KeyStore {
 final class NvrStore: ObservableObject {
     @Published var cameras: [NvrCamera] = []
     @Published var name = "EAC Vision NVR"
+    @Published var viewName = "Principale"
+    @Published var layoutName = "4 riquadri"
     @Published var error = ""
     @Published var connected = false
     @Published var address = UserDefaults.standard.string(forKey: "nvr-address") ?? ""
@@ -132,17 +141,26 @@ final class NvrStore: ObservableObject {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    private func selectView(_ cameras: [NvrCamera], from views: [NvrView]) -> [NvrCamera] {
+        guard let view = views.first else { return cameras }
+        viewName = view.name
+        layoutName = view.layout == "L16" ? "16 riquadri" : view.layout == "L9" ? "9 riquadri" : "4 riquadri"
+        let byId = Dictionary(uniqueKeysWithValues: cameras.map { ($0.id, $0) })
+        return view.slots.compactMap { byId[$0] }
+    }
+
     func connect(address proposed: String, key proposedKey: String) async throws {
         let parsed = try Self.parseAddress(proposed)
         let secret = proposedKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !secret.isEmpty else { throw NvrError(message: "Inserisci il codice delle app mostrato su Home Assistant") }
         let response: CameraListResponse = try await fetch("/eacnvr/cameras", base: parsed, key: secret)
+        let views: [NvrView] = (try? await fetch("/eacnvr/views", base: parsed, key: secret)) ?? []
         address = proposed.trimmingCharacters(in: .whitespacesAndNewlines)
         baseURL = parsed
         key = secret
         KeyStore.save(secret)
         UserDefaults.standard.set(address, forKey: "nvr-address")
-        cameras = response.cams
+        cameras = selectView(response.cams, from: views)
         name = response.name
         error = ""
         connected = true
@@ -151,7 +169,8 @@ final class NvrStore: ObservableObject {
     func refreshCameras() async {
         do {
             let response: CameraListResponse = try await fetch("/eacnvr/cameras")
-            cameras = response.cams
+            let views: [NvrView] = (try? await fetch("/eacnvr/views")) ?? []
+            cameras = selectView(response.cams, from: views)
             name = response.name
             error = ""
         } catch { self.error = error.localizedDescription }

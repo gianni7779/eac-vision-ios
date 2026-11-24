@@ -3,74 +3,196 @@ import Combine
 import SwiftUI
 import UIKit
 
-private let appBackground = Color(red: 0.025, green: 0.08, blue: 0.13)
-private let panel = Color(red: 0.07, green: 0.18, blue: 0.26)
+private let appBackground = Color(red: 12/255, green: 23/255, blue: 37/255)
+private let panel = Color(red: 23/255, green: 40/255, blue: 58/255)
+private let panel2 = Color(red: 32/255, green: 55/255, blue: 75/255)
+private let accent = Color(red: 34/255, green: 163/255, blue: 227/255)
+private let dim = Color(red: 169/255, green: 190/255, blue: 207/255)
+private let line = Color(red: 95/255, green: 155/255, blue: 190/255).opacity(0.35)
 
 struct CamerasView: View {
     @EnvironmentObject private var store: NvrStore
-    private let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+    let onNavigate: (AppPage) -> Void
+    private let columns = [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)]
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text(store.name).font(.title2.bold())
-                if !store.error.isEmpty { Text(store.error).foregroundStyle(.orange) }
-                if store.cameras.isEmpty { ContentUnavailableView("Nessuna telecamera", systemImage: "video.slash", description: Text("Controlla l'integrazione ONVIF in Home Assistant.")) }
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(store.cameras) { camera in
-                        NavigationLink(value: camera) {
-                            VStack(alignment: .leading, spacing: 5) {
-                                AsyncImage(url: store.endpoint("/eacnvr/snapshot", query: [URLQueryItem(name: "cam", value: camera.id)])) { image in
-                                    image.resizable().scaledToFit()
-                                } placeholder: {
-                                    Rectangle().fill(.black).overlay { ProgressView() }
-                                }
-                                .frame(maxWidth: .infinity).aspectRatio(16/9, contentMode: .fit)
-                                Text(camera.name).font(.subheadline.bold()).lineLimit(1).padding(.horizontal, 8)
-                                Text(camera.recording == true ? "● REC" : "LIVE").font(.caption2).foregroundStyle(camera.recording == true ? Color.red : Color.cyan).padding(.horizontal, 8).padding(.bottom, 8)
+        VStack(spacing: 0) {
+            header
+            if !store.error.isEmpty {
+                Text(store.error).font(.footnote).foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+            }
+            if store.cameras.isEmpty {
+                Spacer()
+                VStack(spacing: 12) {
+                    Image("EACLogo").resizable().scaledToFit().frame(width: 90, height: 90)
+                    Text("Nessuna telecamera nella vista").font(.title3.bold())
+                    Text("Aggiungi le camere con ONVIF in Home Assistant e selezionale nella vista principale.")
+                        .font(.subheadline).foregroundStyle(dim).multilineTextAlignment(.center)
+                    Button("Impostazioni", systemImage: "gearshape") { onNavigate(.settings) }
+                        .buttonStyle(.borderedProminent).tint(accent)
+                }.padding(24)
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: store.cameras.count == 1 ? [GridItem(.flexible())] : columns, spacing: 6) {
+                        ForEach(store.cameras) { camera in
+                            NavigationLink(value: camera) {
+                                CameraTile(camera: camera, live: (store.cameras.firstIndex(of: camera) ?? 0) < 4)
                             }
-                            .background(panel, in: RoundedRectangle(cornerRadius: 12))
+                                .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
-                    }
+                    }.padding(6)
                 }
-            }.padding()
+                .refreshable { await store.refreshCameras() }
+            }
         }
         .background(appBackground)
-        .navigationTitle("Telecamere")
-        .navigationDestination(for: NvrCamera.self) { CameraDetailView(camera: $0) }
-        .refreshable { await store.refreshCameras() }
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Image("EACLogo").resizable().scaledToFit().frame(width: 36, height: 36)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("EAC Vision").font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
+                    Text("Electronic Ascione Company").font(.system(size: 10)).foregroundStyle(dim)
+                }
+                Spacer(minLength: 3)
+                headerButton("clock.arrow.circlepath") { onNavigate(.recordings) }
+                headerButton("video") { Task { await store.refreshCameras() } }
+                Menu {
+                    Button("Registrazioni", systemImage: "clock.arrow.circlepath") { onNavigate(.recordings) }
+                    Button("Eventi AI", systemImage: "sparkles") { onNavigate(.events) }
+                    Button("Impostazioni", systemImage: "gearshape") { onNavigate(.settings) }
+                } label: { headerIcon("line.3.horizontal") }
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    Label(store.viewName, systemImage: "square.grid.2x2")
+                        .font(.system(size: 13, weight: .medium)).padding(.horizontal, 11).padding(.vertical, 9)
+                        .background(panel2, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(line))
+                    Label(store.layoutName, systemImage: "square.grid.3x3")
+                        .font(.system(size: 13, weight: .medium)).padding(.horizontal, 11).padding(.vertical, 9)
+                        .background(panel2, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(line))
+                    Label("Audio disattivato", systemImage: "speaker.slash")
+                        .font(.system(size: 12)).foregroundStyle(dim)
+                }
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(appBackground)
+    }
+
+    private func headerButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { headerIcon(symbol) }.buttonStyle(.plain)
+    }
+
+    private func headerIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol).font(.system(size: 17, weight: .medium))
+            .foregroundStyle(.white).frame(width: 36, height: 34)
+            .background(panel2, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(line))
+    }
+}
+
+private struct CameraTile: View {
+    @EnvironmentObject private var store: NvrStore
+    let camera: NvrCamera
+    let live: Bool
+    @State private var player = AVPlayer()
+    @State private var snapshotTick = 0
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            Color.black
+            if live {
+                PlayerSurface(player: player).allowsHitTesting(false)
+            } else {
+                AsyncImage(url: store.endpoint("/eacnvr/snapshot", query: [
+                    URLQueryItem(name: "cam", value: camera.id), URLQueryItem(name: "t", value: String(snapshotTick))
+                ])) { image in
+                    image.resizable().scaledToFit()
+                } placeholder: { Color.black }
+                .allowsHitTesting(false)
+            }
+            LinearGradient(colors: [.clear, .black.opacity(0.78)], startPoint: .center, endPoint: .bottom)
+                .allowsHitTesting(false)
+            Text(camera.name).font(.system(size: 12, weight: .bold)).lineLimit(1)
+                .shadow(color: .black, radius: 3).padding(8)
+            Text(live ? (camera.recording == true ? "REC" : "LIVE") : "APRI")
+                .font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 3)
+                .background(camera.recording == true ? Color.red.opacity(0.85) : accent.opacity(0.8), in: RoundedRectangle(cornerRadius: 4))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(7)
+        }
+        .aspectRatio(16/9, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(line))
+        .onAppear {
+            guard live else { return }
+            guard let url = store.endpoint("/eacnvr/hls.m3u8", query: [URLQueryItem(name: "src", value: camera.id)]) else { return }
+            player.isMuted = true
+            player.replaceCurrentItem(with: AVPlayerItem(url: url))
+            player.play()
+        }
+        .onDisappear { player.pause(); player.replaceCurrentItem(with: nil) }
+        .onReceive(Timer.publish(every: 3, on: .main, in: .common).autoconnect()) { _ in
+            if !live { snapshotTick += 1 }
+        }
     }
 }
 
 struct CameraDetailView: View {
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: NvrStore
     let camera: NvrCamera
     @State private var player = AVPlayer()
     @State private var audioOn = false
+    @State private var controlsVisible = true
 
     var body: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            VideoPlayer(player: player)
+        ZStack {
+            Color.black.ignoresSafeArea()
+            PlayerSurface(player: player)
                 .aspectRatio(16/9, contentMode: .fit)
-                .background(.black)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            HStack(spacing: 12) {
-                Button(audioOn ? "Disattiva audio" : "Attiva audio", systemImage: audioOn ? "speaker.wave.2" : "speaker.slash") {
-                    audioOn.toggle()
-                    player.isMuted = !audioOn
-                }.buttonStyle(.bordered)
-                Button("Ricollega", systemImage: "arrow.clockwise") { start() }.buttonStyle(.bordered)
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation { controlsVisible.toggle() } }
+            if controlsVisible {
+                VStack {
+                    HStack(spacing: 10) {
+                        Button { dismiss() } label: { Label("Indietro", systemImage: "chevron.left") }
+                        Spacer()
+                        Text(camera.name).font(.subheadline.bold()).lineLimit(1)
+                        Spacer()
+                        Text("LIVE").font(.caption2.bold()).foregroundStyle(accent)
+                    }
+                    .padding(12).background(panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
+                    Spacer()
+                    HStack(spacing: 9) {
+                        Button {
+                            audioOn.toggle()
+                            player.isMuted = !audioOn
+                        } label: {
+                            Label(audioOn ? "Audio attivo" : "Audio", systemImage: audioOn ? "speaker.wave.2" : "speaker.slash")
+                        }
+                        Button { start() } label: { Label("Ricollega", systemImage: "arrow.clockwise") }
+                        NavigationLink(value: AppPage.recordings) {
+                            Label("Archivio", systemImage: "clock.arrow.circlepath")
+                        }
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .buttonStyle(.plain)
+                    .padding(12)
+                    .frame(maxWidth: .infinity)
+                    .background(panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
+                }.padding(10)
             }
-            Text("Video nel formato originale della telecamera. L'audio dipende dal codec del flusso.")
-                .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            Spacer()
         }
-        .padding()
-        .background(appBackground)
-        .navigationTitle(camera.name)
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
         .onAppear { start() }
         .onDisappear { player.pause(); player.replaceCurrentItem(with: nil) }
     }
@@ -123,19 +245,40 @@ struct RecordingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Archivio video").font(.title2.bold())
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image("EACLogo").resizable().scaledToFit().frame(width: 38, height: 38)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("REGISTRAZIONI").font(.system(size: 10, weight: .bold)).tracking(1.5).foregroundStyle(accent)
+                        Text("Archivio video").font(.title2.bold())
+                    }
+                }
                 if !error.isEmpty { Text(error).foregroundStyle(.orange).font(.footnote) }
                 Picker("Telecamera", selection: $cameraId) {
                     ForEach(store.cameras) { camera in Text(camera.name).tag(camera.id) }
-                }.pickerStyle(.menu)
-                Picker("Giorno", selection: $day) {
-                    ForEach(days, id: \.day) { item in Text(item.day).tag(item.day) }
-                }.pickerStyle(.menu)
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8).background(panel, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(line))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(days, id: \.day) { item in
+                            Button(item.day) { day = item.day }
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 13).padding(.vertical, 9)
+                                .background(item.day == day ? Color(red: 20/255, green: 95/255, blue: 134/255) : panel2,
+                                            in: RoundedRectangle(cornerRadius: 10))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(item.day == day ? accent : line))
+                        }
+                    }
+                }
                 VideoPlayer(player: player)
                     .aspectRatio(16/9, contentMode: .fit)
                     .background(.black)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(line))
                 Text(dragging ? "Anteprima · \(clock(seconds))" : "\(day) · \(clock(seconds))")
                     .font(.headline.monospacedDigit())
                 if dragging {
@@ -150,15 +293,17 @@ struct RecordingsView: View {
                 })
                 .onChange(of: seconds) { _, value in if dragging { showPreview(value) } }
                 .disabled(segments.isEmpty)
+                .tint(accent)
                 HStack { Text("00:00"); Spacer(); Text("Trascina per vedere l'anteprima"); Spacer(); Text("24:00") }
                     .font(.caption2).foregroundStyle(.secondary)
-                Text("Parti azzurre: video disponibile").font(.caption).foregroundStyle(.secondary)
+                Text("Parti azzurre: video disponibile").font(.caption).foregroundStyle(dim)
                 coverage
                 if segments.isEmpty { ContentUnavailableView("Nessun video", systemImage: "clock", description: Text("Scegli una camera e un giorno con registrazioni.")) }
             }.padding()
         }
         .background(appBackground)
         .navigationTitle("Registrazioni")
+        .toolbar(.visible, for: .navigationBar)
         .task(id: store.cameras) {
             if cameraId.isEmpty, let first = store.cameras.first { cameraId = first.id }
         }
@@ -185,7 +330,7 @@ struct RecordingsView: View {
                 ForEach(segments, id: \.name) { segment in
                     let left = CGFloat(max(0, (segment.start - dayStart) / 86400))
                     let width = CGFloat(max(0, min(segment.dur / 86400, Double(1 - left))))
-                    Capsule().fill(.cyan).frame(width: proxy.size.width * width)
+                    Capsule().fill(accent).frame(width: proxy.size.width * width)
                         .offset(x: proxy.size.width * left)
                 }
             }
@@ -267,6 +412,14 @@ struct EventsView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
+                HStack(spacing: 10) {
+                    Image("EACLogo").resizable().scaledToFit().frame(width: 38, height: 38)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("EAC VISION AI").font(.system(size: 10, weight: .bold)).tracking(1.5).foregroundStyle(accent)
+                        Text("Eventi").font(.title2.bold())
+                    }
+                    Spacer()
+                }
                 if !error.isEmpty { Text(error).foregroundStyle(.orange).padding() }
                 ForEach(events) { event in
                     VStack(alignment: .leading, spacing: 8) {
@@ -277,12 +430,14 @@ struct EventsView: View {
                         Text("\(event.camName) · \(Date(timeIntervalSince1970: event.start / 1000).formatted(date: .abbreviated, time: .standard))")
                             .font(.caption).foregroundStyle(.secondary)
                     }.padding(10).background(panel, in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(line))
                 }
                 if events.isEmpty && error.isEmpty { ContentUnavailableView("Nessun evento", systemImage: "sparkles", description: Text("L'edizione AI mostra qui persone, veicoli e animali rilevati.")) }
             }.padding()
         }
         .background(appBackground)
         .navigationTitle("Eventi AI")
+        .toolbar(.visible, for: .navigationBar)
         .task { await refresh() }
         .refreshable { await refresh() }
     }
@@ -301,12 +456,26 @@ struct ConnectionView: View {
     @State private var error = ""
 
     var body: some View {
-        Form {
-            Section("Collega EAC Vision NVR") {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 10) {
+                    Image("EACLogo").resizable().scaledToFit().frame(width: 40, height: 40)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("EAC Vision").font(.title2.bold())
+                        Text("COLLEGA IL REGISTRATORE").font(.system(size: 10, weight: .bold))
+                            .tracking(1.2).foregroundStyle(accent)
+                    }
+                }
+                Text("Indirizzo Home Assistant o Tailscale").font(.subheadline.bold())
                 TextField("Indirizzo del dispositivo HA", text: $address)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                     .keyboardType(.URL)
+                    .padding(12).background(panel2, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(line))
+                Text("Codice delle app").font(.subheadline.bold())
                 SecureField("Codice delle app", text: $key)
+                    .padding(12).background(panel2, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(line))
                 Button(busy ? "Collegamento…" : "Collega") {
                     Task {
                         busy = true
@@ -314,17 +483,26 @@ struct ConnectionView: View {
                         catch { self.error = error.localizedDescription }
                         busy = false
                     }
-                }.disabled(busy)
+                }
+                .disabled(busy).buttonStyle(.borderedProminent).tint(accent)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 if !error.isEmpty { Text(error).foregroundStyle(.orange) }
                 if store.connected { Label("Collegato a \(store.name)", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
-            }
-            Section("Esempi") {
+                Divider().overlay(line)
+                Text("COLLEGAMENTO FUORI CASA").font(.system(size: 11, weight: .bold))
+                    .tracking(1.2).foregroundStyle(accent)
                 Text("Tailscale: http://100.x.y.z:8766 per la versione senza AI, oppure :8767 per l'edizione AI.")
                 Text("DuckDNS: usa https://tuodominio.duckdns.org con un proxy HTTPS che inoltra /eacnvr/. L'indirizzo HA sulla porta 8123 non basta.")
                 Text("Il codice si trova in EAC Vision Home Assistant → Impostazioni → PC, TV e telefono.")
+                    .foregroundStyle(dim)
             }
+            .font(.subheadline)
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .background(appBackground)
         .navigationTitle("Impostazioni")
+        .toolbar(.visible, for: .navigationBar)
         .onAppear { address = store.address; key = store.key }
     }
 }

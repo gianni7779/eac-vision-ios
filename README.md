@@ -1,6 +1,6 @@
 # EAC Vision per iPhone
 
-Client iOS per **EAC Vision Home Assistant** e **EAC Vision AI Home Assistant**. Mostra camere ONVIF, live HLS con audio, registrazioni H24 con anteprima durante lo scorrimento e gli eventi della versione AI.
+Client iOS per **EAC Vision Home Assistant** e **EAC Vision AI Home Assistant**. La grafica riprende l'app Android: logo, barra superiore, vista delle camere e colori blu/azzurro. Mostra le camere ONVIF selezionate nella vista, live HLS con audio nella vista singola, registrazioni H24 con anteprima durante lo scorrimento e gli eventi della versione AI.
 
 ## Collegamento
 
@@ -9,11 +9,11 @@ Client iOS per **EAC Vision Home Assistant** e **EAC Vision AI Home Assistant**.
 - Inserisci il codice delle app mostrato nelle impostazioni di EAC Vision su HA. Il codice viene conservato nel portachiavi iOS.
 - Con DuckDNS serve un proxy HTTPS verso `/eacnvr/`, con supporto HLS/MP4 e WebSocket. Il normale URL di Home Assistant sulla porta 8123 non basta.
 
-Il live usa il formato HLS/fMP4 di go2rtc, inoltrato dal componente HA. Il video H.264/H.265 e l'audio dipendono dai codec della telecamera e dal modello di iPhone. Le registrazioni usano i file MP4 dell'archivio EAC Vision: la timeline copre l'intera giornata, mostra un'anteprima mentre sposti il cursore e passa automaticamente al file successivo durante la riproduzione. Gli eventi AI sono disponibili solo nell'edizione AI.
+Il live usa il formato HLS/fMP4 di go2rtc, inoltrato dal componente HA. La griglia mostra fino a quattro camere in diretta; le altre si aggiornano con istantanee e si aprono in diretta toccandole, per evitare troppi decoder simultanei sul telefono e sul registratore. Il video H.264/H.265 e l'audio dipendono dai codec della telecamera e dal modello di iPhone. Le registrazioni usano i file MP4 dell'archivio EAC Vision: la timeline copre l'intera giornata, mostra un'anteprima mentre sposti il cursore e passa automaticamente al file successivo durante la riproduzione. Gli eventi AI sono disponibili solo nell'edizione AI.
 
 ## Build e IPA
 
-Scarica [EACVision-unsigned.ipa](https://github.com/gianni7779/eac-vision-ios/releases/download/v1.0.0-ios-preview/EACVision-unsigned.ipa) dalla release di anteprima.
+Scarica l'IPA più recente dalla [pagina delle release](https://github.com/gianni7779/eac-vision-ios/releases).
 
 Il progetto SwiftUI è definito in `project.yml` per XcodeGen. Il workflow GitHub Actions compila su macOS e produce `EACVision-unsigned.ipa` come artifact. **L'IPA non è firmata**: iOS richiede una firma valida per installarla. Per un'IPA direttamente installabile bisogna firmarla con un certificato/profilo Apple del proprietario oppure firmare localmente l'IPA con uno strumento di sideload autorizzato dal dispositivo. Non inserire credenziali Apple nel repository.
 
