@@ -82,13 +82,20 @@ final class NvrStore: ObservableObject {
     private(set) var key = KeyStore.read()
 
     init() {
-        if !address.isEmpty, !key.isEmpty, let url = try? Self.parseAddress(address) {
+        let saved = UserDefaults.standard.string(forKey: "nvr-base-url")
+        if !address.isEmpty, !key.isEmpty,
+           let url = saved.flatMap(URL.init(string:)) ?? (try? Self.parseAddress(address)) {
             baseURL = url
             connected = true
         }
     }
 
     static func parseAddress(_ text: String) throws -> URL {
+        guard let first = try candidateAddresses(text).first else { throw NvrError(message: "Indirizzo non valido") }
+        return first
+    }
+
+    static func candidateAddresses(_ text: String) throws -> [URL] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw NvrError(message: "Inserisci l'indirizzo del registratore") }
         let value = trimmed.contains("://") ? trimmed : "http://" + trimmed
@@ -98,16 +105,37 @@ final class NvrStore: ObservableObject {
               scheme == "http" || scheme == "https" else {
             throw NvrError(message: "Indirizzo non valido")
         }
-        if components.port == 8123 { throw NvrError(message: "La porta 8123 di Home Assistant non è la porta NVR") }
         if scheme == "http" && !privateHost(host) {
             throw NvrError(message: "Per DuckDNS usa un proxy HTTPS; per Tailscale usa l'IP 100.x.y.z")
         }
-        components.port = components.port ?? (scheme == "https" ? 443 : 8766)
+        let originalPort = components.port
         components.path = ""
         components.query = nil
         components.fragment = nil
+        if privateHost(host) && (originalPort == nil || originalPort == 8123) {
+            var httpsURL: URL?
+            if scheme == "https" {
+                var https = components
+                https.port = 443
+                httpsURL = https.url
+            }
+            components.scheme = "http"
+            components.port = 8766
+            guard let basic = components.url else { throw NvrError(message: "Indirizzo non valido") }
+            components.port = 8767
+            guard let ai = components.url else { throw NvrError(message: "Indirizzo non valido") }
+            return [basic, ai] + (httpsURL.map { [$0] } ?? [])
+        }
+        if originalPort == 8123 {
+            throw NvrError(message: "DuckDNS sulla porta 8123 apre solo Home Assistant: configura il proxy HTTPS per /eacnvr/")
+        }
+        components.port = originalPort ?? (scheme == "https" ? 443 : 8766)
         guard let url = components.url else { throw NvrError(message: "Indirizzo non valido") }
-        return url
+        if privateHost(host) && scheme == "http" && components.port == 8766 {
+            components.port = 8767
+            if let ai = components.url { return [url, ai] }
+        }
+        return [url]
     }
 
     private static func privateHost(_ host: String) -> Bool {
@@ -129,10 +157,10 @@ final class NvrStore: ObservableObject {
 
     func endpoint(_ path: String, query: [URLQueryItem] = []) -> URL? { url(path, query: query) }
 
-    private func fetch<T: Decodable>(_ path: String, query: [URLQueryItem] = [], base: URL? = nil, key: String? = nil) async throws -> T {
+    private func fetch<T: Decodable>(_ path: String, query: [URLQueryItem] = [], base: URL? = nil, key: String? = nil, timeout: TimeInterval = 20) async throws -> T {
         guard let address = url(path, query: query, base: base, key: key) else { throw NvrError(message: "NVR non configurato") }
         var request = URLRequest(url: address)
-        request.timeoutInterval = 20
+        request.timeoutInterval = timeout
         request.cachePolicy = .reloadIgnoringLocalCacheData
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw NvrError(message: "Risposta NVR non valida") }
@@ -150,16 +178,34 @@ final class NvrStore: ObservableObject {
     }
 
     func connect(address proposed: String, key proposedKey: String) async throws {
-        let parsed = try Self.parseAddress(proposed)
+        let candidates = try Self.candidateAddresses(proposed)
         let secret = proposedKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !secret.isEmpty else { throw NvrError(message: "Inserisci il codice delle app mostrato su Home Assistant") }
-        let response: CameraListResponse = try await fetch("/eacnvr/cameras", base: parsed, key: secret)
+        var selected: URL?
+        var response: CameraListResponse?
+        var wrongKey = false
+        var lastError = ""
+        for candidate in candidates {
+            do {
+                response = try await fetch("/eacnvr/cameras", base: candidate, key: secret, timeout: 8)
+                selected = candidate
+                break
+            } catch {
+                lastError = error.localizedDescription
+                if lastError.contains("Codice NVR errato") { wrongKey = true }
+            }
+        }
+        guard let parsed = selected, let response else {
+            if wrongKey { throw NvrError(message: "Codice delle app errato. Copialo dalle impostazioni dell'add-on EAC Vision.") }
+            throw NvrError(message: "Servizio video non raggiungibile. Controlla in HA → EAC Vision → Rete che la porta 8766 (senza AI) o 8767 (AI) sia pubblicata. Con Tailscale prova prima l'indirizzo /eacnvr/info in Safari. Dettaglio: \(lastError)")
+        }
         let views: [NvrView] = (try? await fetch("/eacnvr/views", base: parsed, key: secret)) ?? []
         address = proposed.trimmingCharacters(in: .whitespacesAndNewlines)
         baseURL = parsed
         key = secret
         KeyStore.save(secret)
         UserDefaults.standard.set(address, forKey: "nvr-address")
+        UserDefaults.standard.set(parsed.absoluteString, forKey: "nvr-base-url")
         cameras = selectView(response.cams, from: views)
         name = response.name
         error = ""

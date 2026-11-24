@@ -106,25 +106,22 @@ private struct CameraTile: View {
     let live: Bool
     @State private var player = AVPlayer()
     @State private var snapshotTick = 0
+    @State private var streamReady = false
+    @State private var streamMode = 0
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             Color.black
+            CameraSnapshot(camera: camera, tick: snapshotTick).allowsHitTesting(false)
             if live {
-                PlayerSurface(player: player).allowsHitTesting(false)
-            } else {
-                AsyncImage(url: store.endpoint("/eacnvr/snapshot", query: [
-                    URLQueryItem(name: "cam", value: camera.id), URLQueryItem(name: "t", value: String(snapshotTick))
-                ])) { image in
-                    image.resizable().scaledToFit()
-                } placeholder: { Color.black }
-                .allowsHitTesting(false)
+                PlayerSurface(player: player, onReady: { streamReady = $0 })
+                    .opacity(streamReady ? 1 : 0.01).allowsHitTesting(false)
             }
             LinearGradient(colors: [.clear, .black.opacity(0.78)], startPoint: .center, endPoint: .bottom)
                 .allowsHitTesting(false)
             Text(camera.name).font(.system(size: 12, weight: .bold)).lineLimit(1)
                 .shadow(color: .black, radius: 3).padding(8)
-            Text(live ? (camera.recording == true ? "REC" : "LIVE") : "APRI")
+            Text(live && streamReady ? (camera.recording == true ? "REC" : "LIVE") : "APRI")
                 .font(.system(size: 9, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 3)
                 .background(camera.recording == true ? Color.red.opacity(0.85) : accent.opacity(0.8), in: RoundedRectangle(cornerRadius: 4))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(7)
@@ -132,17 +129,28 @@ private struct CameraTile: View {
         .aspectRatio(16/9, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(line))
-        .onAppear {
-            guard live else { return }
-            guard let url = store.endpoint("/eacnvr/hls.m3u8", query: [URLQueryItem(name: "src", value: camera.id)]) else { return }
-            player.isMuted = true
-            player.replaceCurrentItem(with: AVPlayerItem(url: url))
-            player.play()
-        }
+        .onAppear { if live { startStream() } }
         .onDisappear { player.pause(); player.replaceCurrentItem(with: nil) }
         .onReceive(Timer.publish(every: 3, on: .main, in: .common).autoconnect()) { _ in
-            if !live { snapshotTick += 1 }
+            if !streamReady { snapshotTick += 1 }
         }
+        .task(id: streamMode) {
+            guard live else { return }
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled, !streamReady, streamMode == 0 else { return }
+            streamMode = 1
+            startStream()
+        }
+    }
+
+    private func startStream() {
+        var query = [URLQueryItem(name: "src", value: camera.id)]
+        if streamMode == 1 { query.append(URLQueryItem(name: "mode", value: "ts")) }
+        guard let url = store.endpoint("/eacnvr/hls.m3u8", query: query) else { return }
+        streamReady = false
+        player.isMuted = true
+        player.replaceCurrentItem(with: AVPlayerItem(url: url))
+        player.play()
     }
 }
 
@@ -153,12 +161,23 @@ struct CameraDetailView: View {
     @State private var player = AVPlayer()
     @State private var audioOn = false
     @State private var controlsVisible = true
+    @State private var streamReady = false
+    @State private var streamMode = 0
+    @State private var streamAttempt = 0
+    @State private var snapshotTick = 0
+    @State private var streamMessage = ""
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            PlayerSurface(player: player)
+            CameraSnapshot(camera: camera, tick: snapshotTick)
                 .aspectRatio(16/9, contentMode: .fit)
+            PlayerSurface(player: player, onReady: { ready in
+                streamReady = ready
+                if ready { streamMessage = "" }
+            })
+                .aspectRatio(16/9, contentMode: .fit)
+                .opacity(streamReady ? 1 : 0.01)
                 .contentShape(Rectangle())
                 .onTapGesture { withAnimation { controlsVisible.toggle() } }
             if controlsVisible {
@@ -171,6 +190,11 @@ struct CameraDetailView: View {
                         Text("LIVE").font(.caption2.bold()).foregroundStyle(accent)
                     }
                     .padding(12).background(panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
+                    if !streamReady {
+                        Text(streamMessage.isEmpty ? "Collegamento al live… Anteprima disponibile." : streamMessage)
+                            .font(.caption).foregroundStyle(.white)
+                            .padding(10).background(panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
+                    }
                     Spacer()
                     HStack(spacing: 9) {
                         Button {
@@ -179,7 +203,7 @@ struct CameraDetailView: View {
                         } label: {
                             Label(audioOn ? "Audio attivo" : "Audio", systemImage: audioOn ? "speaker.wave.2" : "speaker.slash")
                         }
-                        Button { start() } label: { Label("Ricollega", systemImage: "arrow.clockwise") }
+                        Button { streamMode = 0; start() } label: { Label("Ricollega", systemImage: "arrow.clockwise") }
                         NavigationLink(value: AppPage.recordings) {
                             Label("Archivio", systemImage: "clock.arrow.circlepath")
                         }
@@ -195,10 +219,30 @@ struct CameraDetailView: View {
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { start() }
         .onDisappear { player.pause(); player.replaceCurrentItem(with: nil) }
+        .onReceive(Timer.publish(every: 3, on: .main, in: .common).autoconnect()) { _ in
+            if !streamReady { snapshotTick += 1 }
+        }
+        .task(id: streamAttempt) {
+            guard player.currentItem != nil else { return }
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled, !streamReady else { return }
+            if streamMode == 0 {
+                streamMode = 1
+                start()
+            } else {
+                streamMessage = "Il live HLS non si apre. Mostro le istantanee; controlla che la camera fornisca H.264/H.265 e aggiorna EAC Vision su HA."
+                controlsVisible = true
+            }
+        }
     }
 
     private func start() {
-        guard let url = store.endpoint("/eacnvr/hls.m3u8", query: [URLQueryItem(name: "src", value: camera.id)]) else { return }
+        var query = [URLQueryItem(name: "src", value: camera.id)]
+        if streamMode == 1 { query.append(URLQueryItem(name: "mode", value: "ts")) }
+        guard let url = store.endpoint("/eacnvr/hls.m3u8", query: query) else { return }
+        streamReady = false
+        streamMessage = streamMode == 1 ? "Provo il formato video alternativo…" : ""
+        streamAttempt += 1
         player.replaceCurrentItem(with: AVPlayerItem(url: url))
         player.isMuted = !audioOn
         player.play()
@@ -208,16 +252,47 @@ struct CameraDetailView: View {
 final class PlayerLayerView: UIView {
     override class var layerClass: AnyClass { AVPlayerLayer.self }
     var videoLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+    var onReady: ((Bool) -> Void)?
+    private var readiness: NSKeyValueObservation?
+
+    func watchReadiness() {
+        guard readiness == nil else { return }
+        readiness = videoLayer.observe(\.isReadyForDisplay, options: [.initial, .new]) { [weak self] layer, _ in
+            DispatchQueue.main.async { self?.onReady?(layer.isReadyForDisplay) }
+        }
+    }
 }
 
 struct PlayerSurface: UIViewRepresentable {
     let player: AVPlayer
+    var onReady: ((Bool) -> Void)? = nil
     func makeUIView(context: Context) -> PlayerLayerView {
         let view = PlayerLayerView()
         view.videoLayer.videoGravity = .resizeAspect
+        view.onReady = onReady
+        view.watchReadiness()
         return view
     }
-    func updateUIView(_ view: PlayerLayerView, context: Context) { view.videoLayer.player = player }
+    func updateUIView(_ view: PlayerLayerView, context: Context) {
+        view.onReady = onReady
+        if view.videoLayer.player !== player { view.videoLayer.player = player }
+    }
+}
+
+private struct CameraSnapshot: View {
+    @EnvironmentObject private var store: NvrStore
+    let camera: NvrCamera
+    let tick: Int
+
+    var body: some View {
+        AsyncImage(url: store.endpoint("/eacnvr/snapshot", query: [
+            URLQueryItem(name: "cam", value: camera.id), URLQueryItem(name: "t", value: String(tick))
+        ])) { image in
+            image.resizable().scaledToFit()
+        } placeholder: {
+            Color.black.overlay { ProgressView().tint(accent) }
+        }
+    }
 }
 
 struct RecordingsView: View {
@@ -491,7 +566,8 @@ struct ConnectionView: View {
                 Divider().overlay(line)
                 Text("COLLEGAMENTO FUORI CASA").font(.system(size: 11, weight: .bold))
                     .tracking(1.2).foregroundStyle(accent)
-                Text("Tailscale: http://100.x.y.z:8766 per la versione senza AI, oppure :8767 per l'edizione AI.")
+                Text("In casa puoi inserire l'IP o l'indirizzo normale di Home Assistant, anche con :8123. EAC Vision prova automaticamente la porta 8766 e la 8767.")
+                Text("Tailscale: usa l'IP 100.x.y.z del dispositivo HA e verifica da Safari che http://100.x.y.z:8766/eacnvr/info (o :8767 per AI) si apra.")
                 Text("DuckDNS: usa https://tuodominio.duckdns.org con un proxy HTTPS che inoltra /eacnvr/. L'indirizzo HA sulla porta 8123 non basta.")
                 Text("Il codice si trova in EAC Vision Home Assistant → Impostazioni → PC, TV e telefono.")
                     .foregroundStyle(dim)
