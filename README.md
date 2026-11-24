@@ -13,6 +13,8 @@ Il live usa il formato HLS/fMP4 di go2rtc, inoltrato dal componente HA. Il video
 
 ## Build e IPA
 
+Scarica [EACVision-unsigned.ipa](https://github.com/gianni7779/eac-vision-ios/releases/download/v1.0.0-ios-preview/EACVision-unsigned.ipa) dalla release di anteprima.
+
 Il progetto SwiftUI è definito in `project.yml` per XcodeGen. Il workflow GitHub Actions compila su macOS e produce `EACVision-unsigned.ipa` come artifact. **L'IPA non è firmata**: iOS richiede una firma valida per installarla. Per un'IPA direttamente installabile bisogna firmarla con un certificato/profilo Apple del proprietario oppure firmare localmente l'IPA con uno strumento di sideload autorizzato dal dispositivo. Non inserire credenziali Apple nel repository.
 
 Il codice sorgente contiene la versione iPhone; non modifica le versioni Android, PC o TV.
