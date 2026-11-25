@@ -1250,7 +1250,7 @@ struct EventsView: View {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(event.camName).font(.subheadline.bold()).lineLimit(1)
-                    Text(Date(timeIntervalSince1970: event.start / 1000).formatted(date: .abbreviated, time: .short))
+                    Text(Date(timeIntervalSince1970: event.start / 1000).formatted(date: .abbreviated, time: .numeric))
                         .font(.caption).foregroundStyle(Theme.dim)
                 }
                 Spacer(minLength: 8)
