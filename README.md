@@ -26,7 +26,7 @@ Client iOS per **EAC Vision Home Assistant** e **EAC Vision AI Home Assistant**.
 
 ## Collegamento
 
-- Aggiorna l'app Home Assistant: edizione senza AI **0.5.4** o edizione AI **0.1.10**. Le nuove registrazioni includono l'audio se la camera lo fornisce; gli avvisi facoltativi tramite Home Assistant Companion sono disponibili in entrambe le edizioni.
+- Aggiorna l'app Home Assistant: edizione senza AI **0.5.4** o edizione AI **0.1.11**. Le nuove registrazioni includono l'audio se la camera lo fornisce; gli avvisi facoltativi tramite Home Assistant Companion sono disponibili in entrambe le edizioni.
 - In casa puoi inserire l'IP o l'URL di Home Assistant, anche con `:8123`: l'app prova automaticamente le porte 8766 (senza AI) e 8767 (AI).
 - Con Tailscale attivo su iPhone e sul dispositivo HA, inserisci l'IP `100.x.y.z` del dispositivo HA. Se la connessione non riesce, apri `http://100.x.y.z:8766/eacnvr/info` in Safari (o `:8767` per AI) per verificare la porta; non serve il codice per questa verifica.
 - Inserisci il codice delle app mostrato nelle impostazioni di EAC Vision su HA. Il codice viene conservato nel portachiavi iOS.
