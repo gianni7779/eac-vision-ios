@@ -23,6 +23,7 @@ struct RecordingsView: View {
     @State private var previewName = ""
     @State private var seconds = 0.0
     @State private var dragging = false
+    @State private var previewUnavailable = false
     @State private var lastPreview = Date.distantPast
     @State private var error = ""
     @State private var audioOn = true
@@ -191,6 +192,11 @@ struct RecordingsView: View {
                 }
                 .padding()
             }
+            if dragging && previewUnavailable {
+                Label("Nessun video a quest'ora", systemImage: "video.slash")
+                    .font(.subheadline.bold()).foregroundStyle(.white)
+                    .padding(11).background(.black.opacity(0.75), in: Capsule())
+            }
             if loadingSegments { ProgressView().tint(Theme.accentSoft).scaleEffect(1.3) }
             VStack {
                 HStack {
@@ -353,26 +359,26 @@ struct RecordingsView: View {
     private var timelineTrack: some View {
         GeometryReader { geo in
             let width = max(1, geo.size.width)
-            ZStack(alignment: .topLeading) {
-                Capsule().fill(.white.opacity(0.15)).frame(height: 10).offset(y: 15)
-                ForEach(segments, id: \.name) { segment in
+            Canvas { context, size in
+                let track = CGRect(x: 0, y: 15, width: size.width, height: 10)
+                context.fill(Path(roundedRect: track, cornerRadius: 5), with: .color(.white.opacity(0.15)))
+                for segment in segments {
                     let left = max(0, min(1, (segment.start - dayStart) / 86400))
                     let right = max(left, min(1, (segment.start + segment.dur - dayStart) / 86400))
-                    Capsule().fill(Theme.accent).frame(width: max(1, width * (right - left)), height: 10)
-                        .offset(x: width * left, y: 15)
+                    let rect = CGRect(x: size.width * CGFloat(left), y: 15,
+                                      width: max(1, size.width * CGFloat(right - left)), height: 10)
+                    context.fill(Path(rect), with: .color(Theme.accent))
                 }
-                ForEach(recordingEvents) { event in
+                for event in recordingEvents {
                     let position = (event.start / 1000 - dayStart) / 86400
-                    if position >= 0 && position < 1 {
-                        Capsule().fill(eventColor(event.label)).frame(width: 4, height: 20)
-                            .offset(x: max(0, width * position - 2), y: 10)
-                    }
+                    guard position >= 0 && position < 1 else { continue }
+                    let rect = CGRect(x: max(0, size.width * CGFloat(position) - 2), y: 10, width: 4, height: 20)
+                    context.fill(Path(rect), with: .color(eventColor(event.label)))
                 }
-                Capsule().fill(.white).frame(width: 2, height: 29)
-                    .offset(x: max(0, min(width - 2, width * seconds / 86400)), y: 5)
-                Circle().fill(.white).frame(width: 14, height: 14)
-                    .shadow(color: .black.opacity(0.6), radius: 3)
-                    .offset(x: max(0, min(width - 14, width * seconds / 86400 - 7)), y: 12)
+                let marker = max(0, min(size.width - 2, size.width * CGFloat(seconds / 86400)))
+                context.fill(Path(CGRect(x: marker, y: 5, width: 2, height: 29)), with: .color(.white))
+                context.fill(Path(ellipseIn: CGRect(x: max(0, marker - 6), y: 12, width: 14, height: 14)),
+                             with: .color(.white))
             }
             .frame(width: width, height: 40)
             .contentShape(Rectangle())
@@ -386,6 +392,7 @@ struct RecordingsView: View {
                 .onEnded { _ in
                     guard dragging else { return }
                     dragging = false
+                    previewUnavailable = false
                     previewPlayer.pause()
                     play(at: seconds)
                 })
@@ -563,8 +570,17 @@ struct RecordingsView: View {
     }
 
     private func showPreview(_ value: Double, force: Bool = false) {
+        let target = dayStart + value
+        guard let segment = segments.first(where: { $0.start <= target && target < $0.start + $0.dur }) else {
+            previewUnavailable = true
+            previewPlayer.pause()
+            previewPlayer.replaceCurrentItem(with: nil)
+            previewName = ""
+            return
+        }
+        previewUnavailable = false
         guard force || Date().timeIntervalSince(lastPreview) > 0.2,
-              let segment = segment(at: value), let url = store.endpoint(segment.url) else { return }
+              let url = store.endpoint(segment.url) else { return }
         lastPreview = Date()
         let offset = max(0, min(segment.dur - 0.1, dayStart + value - segment.start))
         if previewName != segment.name {
