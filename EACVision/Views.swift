@@ -85,10 +85,18 @@ struct CamerasView: View {
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    Label(store.viewName, systemImage: "square.grid.2x2")
-                        .font(.system(size: 13, weight: .medium)).padding(.horizontal, 11).padding(.vertical, 9)
-                        .background(panel2, in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(line))
+                    Menu {
+                        ForEach(store.availableViews) { view in
+                            Button(view.name, systemImage: view.id == store.selectedViewId ? "checkmark" : "square.grid.2x2") {
+                                store.chooseView(view.id)
+                            }
+                        }
+                    } label: {
+                        Label(store.viewName, systemImage: "square.grid.2x2")
+                            .font(.system(size: 13, weight: .medium)).padding(.horizontal, 11).padding(.vertical, 9)
+                            .background(panel2, in: RoundedRectangle(cornerRadius: 10))
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(line))
+                    }
                     Label(store.layoutName, systemImage: "square.grid.3x3")
                         .font(.system(size: 13, weight: .medium)).padding(.horizontal, 11).padding(.vertical, 9)
                         .background(panel2, in: RoundedRectangle(cornerRadius: 10))

@@ -16,7 +16,7 @@ struct CameraListResponse: Decodable {
     let cams: [NvrCamera]
 }
 
-struct NvrView: Decodable {
+struct NvrView: Identifiable, Decodable {
     let id: String
     let name: String
     let layout: String
@@ -90,6 +90,8 @@ final class NvrStore: ObservableObject {
     @Published var layoutName = "4 riquadri"
     @Published var error = ""
     @Published var connected = false
+    @Published var availableViews: [NvrView] = []
+    @Published var selectedViewId = UserDefaults.standard.string(forKey: "nvr-view-id") ?? ""
     @Published var address = UserDefaults.standard.string(forKey: "nvr-address") ?? ""
     private(set) var baseURL: URL?
     private(set) var key = KeyStore.read()
@@ -197,11 +199,20 @@ final class NvrStore: ObservableObject {
     }
 
     private func selectView(_ cameras: [NvrCamera], from views: [NvrView]) -> [NvrCamera] {
-        guard let view = views.first else { return cameras }
+        availableViews = views
+        guard let view = views.first(where: { $0.id == selectedViewId }) ?? views.first else { return cameras }
+        selectedViewId = view.id
         viewName = view.name
         layoutName = view.layout == "L16" ? "16 riquadri" : view.layout == "L9" ? "9 riquadri" : "4 riquadri"
         let byId = Dictionary(uniqueKeysWithValues: cameras.map { ($0.id, $0) })
         return view.slots.compactMap { byId[$0] }
+    }
+
+    func chooseView(_ id: String) {
+        guard availableViews.contains(where: { $0.id == id }) else { return }
+        selectedViewId = id
+        UserDefaults.standard.set(id, forKey: "nvr-view-id")
+        Task { await refreshCameras() }
     }
 
     func connect(address proposed: String, key proposedKey: String) async throws {
