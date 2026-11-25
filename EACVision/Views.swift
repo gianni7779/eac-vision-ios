@@ -14,6 +14,9 @@ struct CamerasView: View {
     @EnvironmentObject private var store: NvrStore
     let onNavigate: (AppPage) -> Void
     @State private var openedCamera: NvrCamera?
+    @State private var tourRequested = false
+    @State private var autoTourStarted = false
+    @AppStorage("eac-tour-start") private var startTourOnOpen = false
     private let columns = [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)]
 
     var body: some View {
@@ -38,7 +41,7 @@ struct CamerasView: View {
                 ScrollView {
                     LazyVGrid(columns: store.cameras.count == 1 ? [GridItem(.flexible())] : columns, spacing: 6) {
                         ForEach(store.cameras) { camera in
-                            Button { openedCamera = camera } label: {
+                            Button { tourRequested = false; openedCamera = camera } label: {
                                 CameraTile(camera: camera, live: (store.cameras.firstIndex(of: camera) ?? 0) < 4)
                             }
                                 .buttonStyle(.plain)
@@ -50,9 +53,11 @@ struct CamerasView: View {
         }
         .background(appBackground)
         .toolbar(.hidden, for: .navigationBar)
+        .onAppear { startAutomaticTour() }
+        .onChange(of: store.cameras) { _, _ in startAutomaticTour() }
         .fullScreenCover(item: $openedCamera) { camera in
             NavigationStack {
-                CameraDetailView(camera: camera)
+                CameraDetailView(camera: camera, startTour: tourRequested)
                     .navigationDestination(for: AppPage.self) { page in
                         switch page {
                         case .recordings: RecordingsView()
@@ -64,6 +69,13 @@ struct CamerasView: View {
             .environmentObject(store)
             .preferredColorScheme(.dark)
         }
+    }
+
+    private func startAutomaticTour() {
+        guard startTourOnOpen, !autoTourStarted, store.cameras.count > 1 else { return }
+        autoTourStarted = true
+        tourRequested = true
+        openedCamera = store.cameras.first
     }
 
     private var header: some View {
@@ -181,6 +193,10 @@ struct CameraDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: NvrStore
     let camera: NvrCamera
+    @State private var activeId: String
+    @State private var touring = false
+    @State private var tourCountdown = 10
+    @AppStorage("eac-tour-seconds") private var tourSeconds = 10
     @State private var player = AVPlayer()
     @State private var audioOn = false
     @State private var controlsVisible = true
@@ -194,10 +210,18 @@ struct CameraDetailView: View {
     @State private var zoom = 1.0
     @GestureState private var pinchScale: CGFloat = 1
 
+    init(camera: NvrCamera, startTour: Bool = false) {
+        self.camera = camera
+        _activeId = State(initialValue: camera.id)
+        _touring = State(initialValue: startTour)
+    }
+
+    private var activeCamera: NvrCamera { store.cameras.first(where: { $0.id == activeId }) ?? camera }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            CameraSnapshot(camera: camera, tick: snapshotTick)
+            CameraSnapshot(camera: activeCamera, tick: snapshotTick)
                 .aspectRatio(16/9, contentMode: .fit)
             PlayerSurface(player: player, onReady: { ready in
                 streamReady = ready
@@ -216,7 +240,7 @@ struct CameraDetailView: View {
                     HStack(spacing: 10) {
                         Button { dismiss() } label: { Label("Indietro", systemImage: "chevron.left") }
                         Spacer()
-                        Text(camera.name).font(.subheadline.bold()).lineLimit(1)
+                        Text(activeCamera.name).font(.subheadline.bold()).lineLimit(1)
                         Spacer()
                         Text("LIVE").font(.caption2.bold()).foregroundStyle(accent)
                     }
@@ -231,7 +255,7 @@ struct CameraDetailView: View {
                             .padding(10).background(panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
                     }
                     Spacer()
-                    HStack(spacing: 9) {
+                    ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 9) {
                         Button {
                             audioOn.toggle()
                             player.isMuted = !audioOn
@@ -244,15 +268,24 @@ struct CameraDetailView: View {
                         NavigationLink(value: AppPage.recordings) {
                             Label("Archivio", systemImage: "clock.arrow.circlepath")
                         }
-                    }
+                        if store.cameras.count > 1 {
+                            Button { switchCamera(-1) } label: { Label("Precedente", systemImage: "chevron.left") }
+                            Button { switchCamera(1) } label: { Label("Successiva", systemImage: "chevron.right") }
+                            Button {
+                                touring.toggle()
+                                tourCountdown = tourSeconds
+                                if touring { controlsVisible = false; audioOn = false; player.isMuted = true }
+                            } label: { Label(touring ? "Ferma ronda" : "Ronda", systemImage: touring ? "stop.fill" : "play.square.stack") }
+                        }
+                    } }
                     .font(.system(size: 13, weight: .medium))
                     .buttonStyle(.plain)
                     .padding(12)
                     .frame(maxWidth: .infinity)
                     .background(panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
-                    if camera.ezPtz == true || camera.ezSiren == true {
+                    if activeCamera.ezPtz == true || activeCamera.ezSiren == true {
                         VStack(spacing: 8) {
-                            if camera.ezPtz == true {
+                            if activeCamera.ezPtz == true {
                                 Text("PTZ EZVIZ").font(.caption.bold())
                                 HStack(spacing: 16) {
                                     ptzButton("Sinistra", symbol: "arrow.left", direction: "left")
@@ -263,7 +296,7 @@ struct CameraDetailView: View {
                                     ptzButton("Destra", symbol: "arrow.right", direction: "right")
                                 }
                             }
-                            if camera.ezSiren == true {
+                            if activeCamera.ezSiren == true {
                                 Button("Sirena", systemImage: "alarm") { showSiren = true }
                                     .tint(.red)
                             }
@@ -284,9 +317,24 @@ struct CameraDetailView: View {
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+            tourCountdown = tourSeconds
+            if touring { controlsVisible = false }
             start()
         }
-        .onDisappear { player.pause(); player.replaceCurrentItem(with: nil) }
+        .onDisappear { touring = false; player.pause(); player.replaceCurrentItem(with: nil) }
+        .onChange(of: activeId) { _, _ in
+            zoom = 1
+            streamMode = 0
+            streamMessage = ""
+            controlError = ""
+            tourCountdown = tourSeconds
+            start()
+        }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+            guard touring, !controlsVisible, zoom <= 1, store.cameras.count > 1 else { return }
+            tourCountdown -= 1
+            if tourCountdown <= 0 { switchCamera(1) }
+        }
         .onReceive(Timer.publish(every: 3, on: .main, in: .common).autoconnect()) { _ in
             if !streamReady { snapshotTick += 1 }
         }
@@ -305,7 +353,7 @@ struct CameraDetailView: View {
     }
 
     private func start() {
-        var query = [URLQueryItem(name: "src", value: camera.id)]
+        var query = [URLQueryItem(name: "src", value: activeCamera.id)]
         if streamMode == 1 { query.append(URLQueryItem(name: "mode", value: "ts")) }
         guard let url = store.endpoint("/eacnvr/hls.m3u8", query: query) else { return }
         streamReady = false
@@ -318,7 +366,7 @@ struct CameraDetailView: View {
 
     private func ptzButton(_ title: String, symbol: String, direction: String) -> some View {
         Button { Task {
-            do { try await store.ezvizMove(camera: camera, direction: direction); controlError = "" }
+            do { try await store.ezvizMove(camera: activeCamera, direction: direction); controlError = "" }
             catch { controlError = error.localizedDescription }
         } } label: { Label(title, systemImage: symbol).labelStyle(.iconOnly).frame(width: 38, height: 38) }
             .accessibilityLabel(title)
@@ -326,9 +374,15 @@ struct CameraDetailView: View {
 
     private func setSiren(_ enabled: Bool) {
         Task {
-            do { try await store.ezvizSiren(camera: camera, enabled: enabled); controlError = "" }
+            do { try await store.ezvizSiren(camera: activeCamera, enabled: enabled); controlError = "" }
             catch { controlError = error.localizedDescription }
         }
+    }
+
+    private func switchCamera(_ step: Int) {
+        guard store.cameras.count > 1, let index = store.cameras.firstIndex(where: { $0.id == activeId }) else { return }
+        activeId = store.cameras[(index + step + store.cameras.count) % store.cameras.count].id
+        tourCountdown = tourSeconds
     }
 }
 
@@ -717,6 +771,8 @@ struct ConnectionView: View {
     @State private var key = ""
     @State private var busy = false
     @State private var error = ""
+    @AppStorage("eac-tour-seconds") private var tourSeconds = 10
+    @AppStorage("eac-tour-start") private var startTourOnOpen = false
 
     var body: some View {
         ScrollView {
@@ -760,6 +816,11 @@ struct ConnectionView: View {
                             .padding(12).background(panel2, in: RoundedRectangle(cornerRadius: 10))
                     }
                 }
+                Divider().overlay(line)
+                Text("RONDA TELECAMERE").font(.system(size: 11, weight: .bold))
+                    .tracking(1.2).foregroundStyle(accent)
+                Stepper("Cambia camera ogni \(tourSeconds) secondi", value: $tourSeconds, in: 5...120, step: 5)
+                Toggle("Avvia la ronda all'apertura", isOn: $startTourOnOpen)
                 Divider().overlay(line)
                 Text("COLLEGAMENTO FUORI CASA").font(.system(size: 11, weight: .bold))
                     .tracking(1.2).foregroundStyle(accent)
