@@ -4,7 +4,7 @@ Client iOS per **EAC Vision Home Assistant** e **EAC Vision AI Home Assistant**.
 
 ## Novità 1.2.3
 
-- Le notifiche inviate dagli add-on Home Assistant aggiornati aprono direttamente il live della telecamera nell'app iPhone quando la tocchi. Serve EAC Vision AI 0.1.12 o EAC Vision senza AI 0.5.5 e una connessione già configurata nell'app.
+- Le notifiche inviate dagli add-on Home Assistant aggiornati aprono direttamente il live della telecamera nell'app iPhone quando la tocchi. Serve EAC Vision AI 0.1.13 o EAC Vision senza AI 0.5.5 e una connessione già configurata nell'app.
 - Con l'add-on AI, la linea delle registrazioni evidenzia i picchi del volume audio; le barre si popolano via via che l'add-on analizza i file completati.
 
 ## Novità 1.2.2
