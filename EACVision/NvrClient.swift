@@ -7,6 +7,8 @@ struct NvrCamera: Identifiable, Decodable, Hashable {
     let name: String
     let recorded: Bool?
     let recording: Bool?
+    let ezPtz: Bool?
+    let ezSiren: Bool?
 }
 
 struct CameraListResponse: Decodable {
@@ -48,6 +50,7 @@ struct NotifyChoice: Codable {
 
 struct NotifySettings: Decodable {
     let targets: [String]
+    let labels: [String]?
     let subscriptions: [String: NotifyChoice]
 }
 
@@ -262,6 +265,32 @@ final class NvrStore: ObservableObject {
         try await fetch("/eacnvr/events", query: [URLQueryItem(name: "cam", value: camera.id),
                                                   URLQueryItem(name: "day", value: day),
                                                   URLQueryItem(name: "limit", value: "500")])
+    }
+
+    private func control(_ path: String, query: [URLQueryItem]) async throws {
+        guard let address = url(path, query: query) else { throw NvrError(message: "NVR non configurato") }
+        var request = URLRequest(url: address)
+        request.timeoutInterval = 15
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw NvrError(message: "Comando telecamera non riuscito")
+        }
+    }
+
+    func ezvizMove(camera: NvrCamera, direction: String) async throws {
+        guard camera.ezPtz == true, ["up", "down", "left", "right"].contains(direction) else {
+            throw NvrError(message: "PTZ EZVIZ non disponibile")
+        }
+        let query = [URLQueryItem(name: "cam", value: camera.id), URLQueryItem(name: "dir", value: direction)]
+        try await control("/eacnvr/ptz", query: query + [URLQueryItem(name: "action", value: "start")])
+        try? await Task.sleep(for: .milliseconds(350))
+        try await control("/eacnvr/ptz", query: query + [URLQueryItem(name: "action", value: "stop")])
+    }
+
+    func ezvizSiren(camera: NvrCamera, enabled: Bool) async throws {
+        guard camera.ezSiren == true else { throw NvrError(message: "Sirena EZVIZ non disponibile") }
+        try await control("/eacnvr/siren", query: [URLQueryItem(name: "cam", value: camera.id),
+                                                  URLQueryItem(name: "on", value: enabled ? "1" : "0")])
     }
 
     func notifySettings() async throws -> NotifySettings { try await fetch("/eacnvr/notify") }

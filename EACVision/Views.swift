@@ -181,6 +181,10 @@ struct CameraDetailView: View {
     @State private var streamAttempt = 0
     @State private var snapshotTick = 0
     @State private var streamMessage = ""
+    @State private var controlError = ""
+    @State private var showSiren = false
+    @State private var zoom = 1.0
+    @GestureState private var pinchScale: CGFloat = 1
 
     var body: some View {
         ZStack {
@@ -192,9 +196,13 @@ struct CameraDetailView: View {
                 if ready { streamMessage = "" }
             })
                 .aspectRatio(16/9, contentMode: .fit)
+                .scaleEffect(CGFloat(zoom) * pinchScale)
                 .opacity(streamReady ? 1 : 0.01)
                 .contentShape(Rectangle())
                 .onTapGesture { withAnimation { controlsVisible.toggle() } }
+                .simultaneousGesture(MagnificationGesture()
+                    .updating($pinchScale) { value, state, _ in state = value }
+                    .onEnded { value in zoom = min(4, max(1, zoom * Double(value))) })
             if controlsVisible {
                 VStack {
                     HStack(spacing: 10) {
@@ -224,6 +232,7 @@ struct CameraDetailView: View {
                         }
                         .disabled(streamMode == 1)
                         Button { streamMode = 0; start() } label: { Label("Ricollega", systemImage: "arrow.clockwise") }
+                        Button { zoom = 1 } label: { Label("Zoom \(Int(zoom))×", systemImage: "plus.magnifyingglass") }
                         NavigationLink(value: AppPage.recordings) {
                             Label("Archivio", systemImage: "clock.arrow.circlepath")
                         }
@@ -233,8 +242,36 @@ struct CameraDetailView: View {
                     .padding(12)
                     .frame(maxWidth: .infinity)
                     .background(panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
+                    if camera.ezPtz == true || camera.ezSiren == true {
+                        VStack(spacing: 8) {
+                            if camera.ezPtz == true {
+                                Text("PTZ EZVIZ").font(.caption.bold())
+                                HStack(spacing: 16) {
+                                    ptzButton("Sinistra", symbol: "arrow.left", direction: "left")
+                                    VStack(spacing: 7) {
+                                        ptzButton("Su", symbol: "arrow.up", direction: "up")
+                                        ptzButton("Giù", symbol: "arrow.down", direction: "down")
+                                    }
+                                    ptzButton("Destra", symbol: "arrow.right", direction: "right")
+                                }
+                            }
+                            if camera.ezSiren == true {
+                                Button("Sirena", systemImage: "alarm") { showSiren = true }
+                                    .tint(.red)
+                            }
+                            if !controlError.isEmpty { Text(controlError).font(.caption).foregroundStyle(.orange) }
+                        }
+                        .buttonStyle(.bordered)
+                        .padding(10)
+                        .frame(maxWidth: .infinity)
+                        .background(panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
+                    }
                 }.padding(10)
             }
+        }
+        .confirmationDialog("Sirena EZVIZ", isPresented: $showSiren) {
+            Button("Attiva la sirena", role: .destructive) { setSiren(true) }
+            Button("Spegni la sirena") { setSiren(false) }
         }
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
@@ -269,6 +306,21 @@ struct CameraDetailView: View {
         player.replaceCurrentItem(with: AVPlayerItem(url: url))
         player.isMuted = !audioOn
         player.play()
+    }
+
+    private func ptzButton(_ title: String, symbol: String, direction: String) -> some View {
+        Button { Task {
+            do { try await store.ezvizMove(camera: camera, direction: direction); controlError = "" }
+            catch { controlError = error.localizedDescription }
+        } } label: { Label(title, systemImage: symbol).labelStyle(.iconOnly).frame(width: 38, height: 38) }
+            .accessibilityLabel(title)
+    }
+
+    private func setSiren(_ enabled: Bool) {
+        Task {
+            do { try await store.ezvizSiren(camera: camera, enabled: enabled); controlError = "" }
+            catch { controlError = error.localizedDescription }
+        }
     }
 }
 
@@ -340,6 +392,7 @@ struct RecordingsView: View {
     @State private var error = ""
     @State private var audioOn = true
     @State private var zoom = 1.0
+    @GestureState private var pinchScale: CGFloat = 1
     @State private var speed = 1.0
     @State private var playing = false
 
@@ -385,7 +438,10 @@ struct RecordingsView: View {
                 ZStack {
                     Color.black
                     PlayerSurface(player: player)
-                        .scaleEffect(zoom)
+                        .scaleEffect(CGFloat(zoom) * pinchScale)
+                        .simultaneousGesture(MagnificationGesture()
+                            .updating($pinchScale) { value, state, _ in state = value }
+                            .onEnded { value in zoom = min(4, max(1, zoom * Double(value))) })
                 }
                     .aspectRatio(16/9, contentMode: .fit)
                     .clipped()
@@ -416,14 +472,14 @@ struct RecordingsView: View {
                 }
                 Text(dragging ? "Anteprima · \(clock(seconds))" : "\(day) · \(clock(seconds))")
                     .font(.headline.monospacedDigit())
-                if dragging {
-                    PlayerSurface(player: previewPlayer)
-                        .frame(height: 150)
-                        .background(.black, in: RoundedRectangle(cornerRadius: 10))
-                }
+                PlayerSurface(player: previewPlayer)
+                    .frame(height: dragging ? 150 : 0)
+                    .clipped()
+                    .opacity(dragging ? 1 : 0)
+                    .background(.black, in: RoundedRectangle(cornerRadius: 10))
                 Slider(value: $seconds, in: 0...86399, onEditingChanged: { editing in
                     dragging = editing
-                    if editing { showPreview(seconds, force: true) }
+                    if editing { player.pause(); playing = false; showPreview(seconds, force: true) }
                     else { play(at: seconds); previewPlayer.pause() }
                 })
                 .onChange(of: seconds) { _, value in if dragging { showPreview(value) } }
@@ -560,7 +616,9 @@ struct RecordingsView: View {
             previewName = segment.name
             previewPlayer.replaceCurrentItem(with: AVPlayerItem(url: url))
         }
+        previewPlayer.isMuted = true
         previewPlayer.seek(to: CMTime(seconds: offset, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        previewPlayer.play()
     }
 
     private func loadDays() async {
@@ -717,12 +775,14 @@ struct ConnectionView: View {
 struct NotificationsSettingsView: View {
     @EnvironmentObject private var store: NvrStore
     @State private var targets: [String] = []
+    @State private var supportedLabels: [String] = []
     @State private var subscriptions: [String: NotifyChoice] = [:]
     @State private var target = ""
     @State private var enabled = false
     @State private var person = true
     @State private var animal = true
     @State private var vehicle = true
+    @State private var motion = true
     @State private var busy = false
     @State private var status = ""
 
@@ -731,7 +791,7 @@ struct NotificationsSettingsView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Label("Avvisi sul telefono", systemImage: "bell.badge.fill")
                     .font(.title2.bold()).foregroundStyle(accent)
-                Text("EAC Vision AI invia gli avvisi tramite Home Assistant Companion anche quando EAC Vision è chiusa. Scegli questo iPhone e attiva i tipi di rilevamento.")
+                Text("EAC Vision invia gli avvisi tramite Home Assistant Companion anche quando EAC Vision è chiusa. Scegli questo iPhone e attiva i tipi di rilevamento disponibili.")
                     .foregroundStyle(dim)
                 if targets.isEmpty {
                     Text("Nessun dispositivo Companion disponibile. Controlla che l'app Home Assistant sia collegata e abbia il permesso di mostrare notifiche.")
@@ -743,12 +803,13 @@ struct NotificationsSettingsView: View {
                         }
                     }.pickerStyle(.menu)
                     Toggle("Ricevi notifiche", isOn: $enabled)
-                    Toggle("Persone", isOn: $person)
-                    Toggle("Animali", isOn: $animal)
-                    Toggle("Veicoli", isOn: $vehicle)
+                    if supportedLabels.contains("persona") { Toggle("Persone", isOn: $person) }
+                    if supportedLabels.contains("animale") { Toggle("Animali", isOn: $animal) }
+                    if supportedLabels.contains("veicolo") { Toggle("Veicoli", isOn: $vehicle) }
+                    if supportedLabels.contains("movimento") { Toggle("Movimento ONVIF", isOn: $motion) }
                     Button(busy ? "Salvataggio…" : "Salva avvisi") { Task { await save() } }
                         .buttonStyle(.borderedProminent).tint(accent)
-                        .disabled(busy || target.isEmpty || !(person || animal || vehicle))
+                        .disabled(busy || target.isEmpty || selectedLabels.isEmpty)
                     Button("Invia notifica di prova", systemImage: "bell") { Task { await test() } }
                         .buttonStyle(.bordered).disabled(busy || target.isEmpty)
                 }
@@ -764,6 +825,7 @@ struct NotificationsSettingsView: View {
             person = choice?.labels.contains("persona") ?? true
             animal = choice?.labels.contains("animale") ?? true
             vehicle = choice?.labels.contains("veicolo") ?? true
+            motion = choice?.labels.contains("movimento") ?? true
         }
     }
 
@@ -771,6 +833,7 @@ struct NotificationsSettingsView: View {
         do {
             let settings = try await store.notifySettings()
             targets = settings.targets
+            supportedLabels = settings.labels ?? (store.baseURL?.port == 8766 ? ["movimento"] : ["persona", "animale", "veicolo"])
             subscriptions = settings.subscriptions
             let saved = UserDefaults.standard.string(forKey: "notify-device") ?? ""
             target = targets.contains(saved) ? saved : (targets.first ?? "")
@@ -780,15 +843,18 @@ struct NotificationsSettingsView: View {
 
     private func save() async {
         busy = true
-        let labels = [(person, "persona"), (animal, "animale"), (vehicle, "veicolo")]
-            .compactMap { $0.0 ? $0.1 : nil }
         do {
-            let updated = try await store.saveNotify(target: target, enabled: enabled, labels: labels)
+            let updated = try await store.saveNotify(target: target, enabled: enabled, labels: selectedLabels)
             subscriptions = updated.subscriptions
             UserDefaults.standard.set(target, forKey: "notify-device")
             status = "Impostazioni salvate"
         } catch { status = "Errore: \(error.localizedDescription)" }
         busy = false
+    }
+
+    private var selectedLabels: [String] {
+        [(person, "persona"), (animal, "animale"), (vehicle, "veicolo"), (motion, "movimento")]
+            .compactMap { $0.0 && supportedLabels.contains($0.1) ? $0.1 : nil }
     }
 
     private func test() async {
