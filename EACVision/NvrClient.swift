@@ -93,6 +93,7 @@ private enum KeyStore {
 @MainActor
 final class NvrStore: ObservableObject {
     @Published var cameras: [NvrCamera] = []
+    @Published var allCameras: [NvrCamera] = []
     @Published var name = "EAC Vision NVR"
     @Published var viewName = "Principale"
     @Published var layoutName = "4 riquadri"
@@ -254,6 +255,7 @@ final class NvrStore: ObservableObject {
         KeyStore.save(secret)
         UserDefaults.standard.set(address, forKey: "nvr-address")
         UserDefaults.standard.set(parsed.absoluteString, forKey: "nvr-base-url")
+        allCameras = response.cams
         cameras = selectView(response.cams, from: views)
         name = response.name
         error = ""
@@ -264,7 +266,14 @@ final class NvrStore: ObservableObject {
     func disconnect() {
         pendingJump = nil
         cameras = []
+        allCameras = []
         availableViews = []
+        KeyStore.save("")
+        UserDefaults.standard.removeObject(forKey: "nvr-address")
+        UserDefaults.standard.removeObject(forKey: "nvr-base-url")
+        key = ""
+        address = ""
+        baseURL = nil
         connected = false
     }
 
@@ -272,6 +281,7 @@ final class NvrStore: ObservableObject {
         do {
             let response: CameraListResponse = try await fetch("/eacnvr/cameras")
             let views: [NvrView] = (try? await fetch("/eacnvr/views")) ?? []
+            allCameras = response.cams
             cameras = selectView(response.cams, from: views)
             name = response.name
             error = ""

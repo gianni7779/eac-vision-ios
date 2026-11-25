@@ -779,7 +779,7 @@ struct RecordingsView: View {
     @State private var playing = false
     @State private var armedJump: RecordingJump?
 
-    private var camera: NvrCamera? { store.cameras.first { $0.id == cameraId } }
+    private var camera: NvrCamera? { store.allCameras.first { $0.id == cameraId } }
     private var dayStart: Double {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
@@ -793,7 +793,7 @@ struct RecordingsView: View {
                 if !inStack { header }
                 if !error.isEmpty { Text(error).foregroundStyle(.orange).font(.footnote) }
                 Picker("Telecamera", selection: $cameraId) {
-                    ForEach(store.cameras) { camera in Text(camera.name).tag(camera.id) }
+                    ForEach(store.allCameras) { camera in Text(camera.name).tag(camera.id) }
                 }
                 .pickerStyle(.menu)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -903,11 +903,11 @@ struct RecordingsView: View {
         .navigationTitle("Registrazioni")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(inStack ? .visible : .hidden, for: .navigationBar)
-        .task(id: store.cameras) {
+        .task(id: store.allCameras) {
             if cameraId.isEmpty {
-                if let initial = initialCameraId, store.cameras.contains(where: { $0.id == initial }) {
+                if let initial = initialCameraId, store.allCameras.contains(where: { $0.id == initial }) {
                     cameraId = initial
-                } else if let first = store.cameras.first {
+                } else if let first = store.allCameras.first {
                     cameraId = first.id
                 }
             }
@@ -999,7 +999,7 @@ struct RecordingsView: View {
     private func applyPendingJump() {
         guard let jump = store.pendingJump else { return }
         store.pendingJump = nil
-        guard store.cameras.contains(where: { $0.id == jump.cameraId }) else { return }
+        guard store.allCameras.contains(where: { $0.id == jump.cameraId }) else { return }
         armedJump = jump
         if cameraId != jump.cameraId {
             cameraId = jump.cameraId
@@ -1066,12 +1066,14 @@ struct RecordingsView: View {
             let loaded = try await store.days(for: camera)
             guard cameraId == selectedCamera else { return }
             days = loaded
+            let missingJump = armedJump.map { jump in !days.contains(where: { $0.day == jump.day }) } ?? false
+            if missingJump { armedJump = nil }
             if !days.contains(where: { $0.day == day }) {
                 day = days.first?.day ?? ""
             }
             if day.isEmpty { segments = []; recordingEvents = []; player.pause(); player.replaceCurrentItem(with: nil) }
             await loadSegments()
-            error = ""
+            if missingJump && error.isEmpty { error = "La registrazione di questo evento non è più disponibile." }
         } catch { self.error = error.localizedDescription }
     }
 
