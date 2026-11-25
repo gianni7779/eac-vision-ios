@@ -43,6 +43,14 @@ struct NvrEvent: Identifiable, Decodable {
     let end: Double?
 }
 
+/// Salto diretto nell'archivio: seleziona camera, giorno e secondo di riproduzione.
+struct RecordingJump: Hashable {
+    let cameraId: String
+    let day: String
+    let at: Double
+    let label: String
+}
+
 struct NotifyChoice: Codable {
     let enabled: Bool
     let labels: [String]
@@ -93,6 +101,8 @@ final class NvrStore: ObservableObject {
     @Published var availableViews: [NvrView] = []
     @Published var selectedViewId = UserDefaults.standard.string(forKey: "nvr-view-id") ?? ""
     @Published var address = UserDefaults.standard.string(forKey: "nvr-address") ?? ""
+    @Published var selectedTab: AppTab = .live
+    @Published var pendingJump: RecordingJump?
     private(set) var baseURL: URL?
     private(set) var key = KeyStore.read()
 
@@ -247,7 +257,15 @@ final class NvrStore: ObservableObject {
         cameras = selectView(response.cams, from: views)
         name = response.name
         error = ""
+        selectedTab = .live
         connected = true
+    }
+
+    func disconnect() {
+        pendingJump = nil
+        cameras = []
+        availableViews = []
+        connected = false
     }
 
     func refreshCameras() async {

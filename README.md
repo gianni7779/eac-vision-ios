@@ -1,6 +1,16 @@
 # EAC Vision per iPhone
 
-Client iOS per **EAC Vision Home Assistant** e **EAC Vision AI Home Assistant**. La grafica riprende l'app Android: logo, barra superiore, vista delle camere e colori blu/azzurro. Mostra le camere ONVIF selezionate nella vista, live HLS con audio nella vista singola, registrazioni H24 con anteprima durante lo scorrimento e gli eventi della versione AI.
+Client iOS per **EAC Vision Home Assistant** e **EAC Vision AI Home Assistant**. Interfaccia rinnovata in stile app moderna: navigazione a schede in basso (Live, Registrazioni, Eventi, Impostazioni), sfondo sfumato blu scuro, pannelli in vetro, chip di comando e feedback aptico. Mostra le camere ONVIF selezionate nella vista, live HLS con audio nella vista singola, registrazioni H24 con anteprima durante lo scorrimento e gli eventi della versione AI.
+
+## Novità 1.2.0
+
+- **Navigazione a schede**: Live / Registrazioni / Eventi / Impostazioni sempre raggiungibili dalla barra in basso.
+- **Griglia personalizzabile**: oltre alle viste dell'NVR puoi scegliere la griglia locale con 1, 2 o 3 colonne (menu "Griglia" sopra la griglia).
+- **Foto dalla vista camera**: pulsante "Foto" per salvare l'istantanea nella Libreria foto e voce "Condividi la foto" nel menu Altro.
+- **Eventi potenziati**: filtri per tipo (persona, animale, veicolo, movimento) e per camera, percentuale di affidabilità sulla scheda e pulsante "Guarda" che apre le registrazioni direttamente al momento dell'evento.
+- **Velocità di riproduzione fino a 16×** nell'archivio (prima si fermava a 4×).
+- Pannelli traslucidi in vetro, badge REC/LIVE/SNAP più leggibili e piccoli effetti di pressione con feedback aptico sui tasti.
+- In Impostazioni: versione dell'app, nome del registratore e pulsante "Disconnetti".
 
 ## Collegamento
 
@@ -12,7 +22,7 @@ Client iOS per **EAC Vision Home Assistant** e **EAC Vision AI Home Assistant**.
 
 Il live prova HLS/fMP4 e poi HLS/TS. Se il lettore nativo non riceve un fotogramma, l'app continua a mostrare le istantanee della camera invece di lasciare lo schermo nero e segnala il problema nella vista singola. La griglia mostra fino a quattro camere in diretta; le altre si aggiornano con istantanee e si aprono in diretta toccandole, per evitare troppi decoder simultanei sul telefono e sul registratore. Il video H.264/H.265 e l'audio dipendono dai codec della telecamera e dal modello di iPhone. Le registrazioni usano i file MP4 dell'archivio EAC Vision: la timeline copre l'intera giornata, mostra un'anteprima mentre sposti il cursore, indica gli eventi AI con segni colorati (persone arancione, animali verde, veicoli viola) o il movimento ONVIF in grigio nella versione senza AI, e passa automaticamente al file successivo durante la riproduzione.
 
-Puoi cambiare la vista dalla barra sopra la griglia. Toccando una camera nella griglia si apre a schermo intero. Nel live e nelle registrazioni puoi ingrandire con due dita, trascinare l'immagine ingrandita e usare il doppio tocco per ingrandire o tornare alla vista completa. Nella vista singola, uno scorrimento orizzontale cambia camera quando lo zoom è disattivato. Dalla vista singola puoi avviare la ronda delle camere nella vista corrente, passare alla precedente o successiva; in Impostazioni scegli l'intervallo e l'avvio automatico. Nell'archivio puoi attivare o silenziare l'audio, cambiare velocità da 0,5× a 4×, ingrandire il video fino a 6× e saltare direttamente agli eventi rilevati. Durante lo scorrimento della giornata l'anteprima riproduce il video senza audio. Con un NVR PC che espone le capacità EZVIZ, la vista singola offre PTZ e sirena. Il comando Parla richiede un canale audio bidirezionale, attualmente non esposto dal servizio NVR all'app iPhone.
+Nel live e nelle registrazioni puoi ingrandire con due dita, trascinare l'immagine ingrandita e usare il doppio tocco per ingrandire o tornare alla vista completa. Nella vista singola, uno scorrimento orizzontale cambia camera quando lo zoom è disattivato. Dalla vista singola puoi avviare la ronda delle camere nella vista corrente, passare alla precedente o successiva; in Impostazioni scegli l'intervallo e l'avvio automatico. Nell'archivio puoi attivare o silenziare l'audio, cambiare velocità da 0,5× a 16×, ingrandire il video fino a 6× e saltare direttamente agli eventi rilevati. Durante lo scorrimento della giornata l'anteprima riproduce il video senza audio. Con un NVR PC che espone le capacità EZVIZ, la vista singola offre PTZ e sirena. Il comando Parla richiede un canale audio bidirezionale, attualmente non esposto dal servizio NVR all'app iPhone.
 
 In **Impostazioni → Notifiche di rilevamento** puoi scegliere un dispositivo Home Assistant Companion e abilitare i tipi di evento disponibili. Questo è un canale facoltativo; gli avvisi a EAC Vision chiusa arrivano nell'app Home Assistant Companion. Per riceverli direttamente nell'app iPhone occorrono APNs, un'app firmata con la capacità push e un servizio che invia le notifiche.
 
