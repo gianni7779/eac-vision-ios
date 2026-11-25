@@ -17,6 +17,7 @@ struct RecordingsView: View {
     @State private var days: [NvrDay] = []
     @State private var segments: [NvrSegment] = []
     @State private var recordingEvents: [NvrEvent] = []
+    @State private var noiseBins: [Int: Double] = [:]
     @State private var player = AVPlayer()
     @State private var previewPlayer = AVPlayer()
     @State private var activeName = ""
@@ -374,6 +375,10 @@ struct RecordingsView: View {
                 }
                 .font(.system(size: 10)).foregroundStyle(Theme.dim)
             }
+            if !noiseBins.isEmpty {
+                legendDot("Picchi audio", color: .yellow)
+                    .font(.system(size: 10)).foregroundStyle(Theme.dim)
+            }
         }
         .padding(15)
         .background(Theme.panel, in: RoundedRectangle(cornerRadius: 18))
@@ -392,6 +397,14 @@ struct RecordingsView: View {
                     let rect = CGRect(x: size.width * CGFloat(left), y: 15,
                                       width: max(0, size.width * CGFloat(right - left)), height: 10)
                     context.fill(Path(rect), with: .color(Theme.accent))
+                }
+                for (bin, peak) in noiseBins {
+                    let level = max(0, min(1, (peak + 55) / 45))
+                    guard level > 0 else { continue }
+                    let height = CGFloat(5 + level * 24)
+                    let rect = CGRect(x: size.width * CGFloat(bin) / 288, y: 35 - height,
+                                      width: max(2, size.width / 288), height: height)
+                    context.fill(Path(rect), with: .color(.yellow.opacity(0.35 + level * 0.65)))
                 }
                 for event in recordingEvents {
                     let position = (event.start / 1000 - dayStart) / 86400
@@ -652,6 +665,7 @@ struct RecordingsView: View {
         loadingSegments = true
         segments = []
         recordingEvents = []
+        noiseBins = [:]
         player.pause()
         previewPlayer.pause()
         playing = false
@@ -696,6 +710,7 @@ struct RecordingsView: View {
         previewUnavailable = false
         segments = []
         recordingEvents = []
+        noiseBins = [:]
         setZoom(1)
         player.replaceCurrentItem(with: nil)
         do {
@@ -715,6 +730,16 @@ struct RecordingsView: View {
             else { seconds = 0 }
             if armedJump == nil { error = "" }
             loadingSegments = false
+            Task {
+                let levels = (try? await store.noise(for: camera, day: selectedDay)) ?? []
+                guard loadRequest == requestID, cameraId == selectedCamera && day == selectedDay else { return }
+                var bins: [Int: Double] = [:]
+                for level in levels {
+                    let bin = Int(max(0, min(86399, level.start - dayStart)) / 300)
+                    bins[bin] = max(bins[bin] ?? -100, level.peakDB)
+                }
+                noiseBins = bins
+            }
         } catch {
             guard loadRequest == requestID else { return }
             self.error = error.localizedDescription

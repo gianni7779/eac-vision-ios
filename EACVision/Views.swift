@@ -43,8 +43,10 @@ struct CamerasView: View {
         }
         .background { Theme.background.ignoresSafeArea() }
         .toolbar(.hidden, for: .navigationBar)
-        .onAppear { startAutomaticTour() }
-        .onChange(of: store.cameras) { _, _ in startAutomaticTour() }
+        .onAppear { openPendingLive(); startAutomaticTour() }
+        .onChange(of: store.cameras) { _, _ in openPendingLive(); startAutomaticTour() }
+        .onChange(of: store.allCameras) { _, _ in openPendingLive() }
+        .onChange(of: store.pendingLiveCamera) { _, _ in openPendingLive() }
         .fullScreenCover(item: $openedCamera) { camera in
             NavigationStack {
                 CameraDetailView(camera: camera, startTour: tourRequested)
@@ -55,10 +57,19 @@ struct CamerasView: View {
     }
 
     private func startAutomaticTour() {
+        guard store.pendingLiveCamera == nil else { return }
         guard startTourOnOpen, !autoTourStarted, store.cameras.count > 1 else { return }
         autoTourStarted = true
         tourRequested = true
         openedCamera = store.cameras.first
+    }
+
+    private func openPendingLive() {
+        guard let request = store.pendingLiveCamera,
+              let camera = store.allCameras.first(where: { $0.id == request.cameraId }) else { return }
+        tourRequested = false
+        openedCamera = camera
+        store.pendingLiveCamera = nil
     }
 
     private var gridColumns: [GridItem] {

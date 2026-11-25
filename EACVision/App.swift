@@ -10,6 +10,7 @@ struct EACVisionApp: App {
                 .environmentObject(store)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
+                .onOpenURL { store.handleDeepLink($0) }
         }
     }
 }

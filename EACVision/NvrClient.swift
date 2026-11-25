@@ -34,6 +34,16 @@ struct NvrSegment: Decodable, Hashable {
     let live: Bool?
 }
 
+struct NvrNoiseLevel: Decodable {
+    let start: Double
+    let peakDB: Double
+
+    enum CodingKeys: String, CodingKey {
+        case start
+        case peakDB = "peak_db"
+    }
+}
+
 struct NvrEvent: Identifiable, Decodable {
     let id: String
     let cam: String
@@ -50,6 +60,11 @@ struct RecordingJump: Hashable {
     let day: String
     let at: Double
     let label: String
+}
+
+struct LiveCameraRequest: Hashable {
+    let cameraId: String
+    let nonce = UUID()
 }
 
 struct NotifyChoice: Codable {
@@ -105,6 +120,7 @@ final class NvrStore: ObservableObject {
     @Published var address = UserDefaults.standard.string(forKey: "nvr-address") ?? ""
     @Published var selectedTab: AppTab = .live
     @Published var pendingJump: RecordingJump?
+    @Published var pendingLiveCamera: LiveCameraRequest?
     private(set) var baseURL: URL?
     private(set) var key = KeyStore.read()
 
@@ -115,6 +131,16 @@ final class NvrStore: ObservableObject {
             baseURL = url
             connected = true
         }
+    }
+
+    func handleDeepLink(_ link: URL) {
+        guard link.scheme?.lowercased() == "eacvision", link.host?.lowercased() == "live",
+              let id = URLComponents(url: link, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "cam" })?.value,
+              id.range(of: #"^cam_[0-9a-f]{12}$"#, options: .regularExpression) != nil else { return }
+        pendingLiveCamera = LiveCameraRequest(cameraId: id)
+        selectedTab = .live
+        if connected { Task { await refreshCameras() } }
     }
 
     static func parseAddress(_ text: String) throws -> URL {
@@ -295,6 +321,10 @@ final class NvrStore: ObservableObject {
 
     func segments(for camera: NvrCamera, day: String) async throws -> [NvrSegment] {
         try await fetch("/eacnvr/segments", query: [URLQueryItem(name: "cam", value: camera.id), URLQueryItem(name: "day", value: day)])
+    }
+
+    func noise(for camera: NvrCamera, day: String) async throws -> [NvrNoiseLevel] {
+        try await fetch("/eacnvr/noise", query: [URLQueryItem(name: "cam", value: camera.id), URLQueryItem(name: "day", value: day)])
     }
 
     func events() async throws -> [NvrEvent] {

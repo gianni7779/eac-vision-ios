@@ -2,6 +2,11 @@
 
 Client iOS per **EAC Vision Home Assistant** e **EAC Vision AI Home Assistant**. Interfaccia rinnovata in stile app moderna: navigazione a schede in basso (Live, Registrazioni, Eventi, Impostazioni), sfondo sfumato blu scuro, pannelli in vetro, chip di comando e feedback aptico. Mostra le camere ONVIF selezionate nella vista, live HLS con audio nella vista singola, registrazioni H24 con anteprima durante lo scorrimento e gli eventi della versione AI.
 
+## Novità 1.2.3
+
+- Le notifiche inviate dagli add-on Home Assistant aggiornati aprono direttamente il live della telecamera nell'app iPhone quando la tocchi. Serve EAC Vision AI 0.1.12 o EAC Vision senza AI 0.5.5 e una connessione già configurata nell'app.
+- Con l'add-on AI, la linea delle registrazioni evidenzia i picchi del volume audio; le barre si popolano via via che l'add-on analizza i file completati.
+
 ## Novità 1.2.2
 
 - Il salto da un evento AI recente aspetta la registrazione corrispondente e la apre automaticamente appena il segmento viene chiuso, senza avviare un video precedente.
