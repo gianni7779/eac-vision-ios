@@ -32,7 +32,7 @@ struct RecordingsView: View {
     @State private var speed = 1.0
     @State private var playing = false
     @State private var armedJump: RecordingJump?
-    @State private var showAllEvents = false
+    @State private var eventLimit = 8
     @State private var loadingSegments = false
     @State private var loadRequest = UUID()
 
@@ -60,6 +60,7 @@ struct RecordingsView: View {
             .padding(.top, inStack ? 10 : 18)
             .padding(.bottom, 30)
         }
+        .refreshable { await loadDays() }
         .background { Theme.background.ignoresSafeArea() }
         .navigationTitle("Registrazioni")
         .navigationBarTitleDisplayMode(.inline)
@@ -87,7 +88,10 @@ struct RecordingsView: View {
                   index + 1 < segments.count else { return }
             playSegment(segments[index + 1], offset: 0)
         }
-        .onDisappear { player.pause(); previewPlayer.pause(); playing = false }
+        .onDisappear {
+            player.pause(); previewPlayer.pause(); playing = false
+            dragging = false; previewUnavailable = false
+        }
         .onAppear { try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback) }
     }
 
@@ -99,9 +103,12 @@ struct RecordingsView: View {
                 Text("Registrazioni").font(.system(size: 27, weight: .bold, design: .rounded))
             }
             Spacer()
-            Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.accentSoft)
-                .frame(width: 40, height: 40).background(Theme.panel2, in: Circle())
+            Button { Task { await loadDays() } } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.accentSoft)
+                    .frame(width: 40, height: 40).background(Theme.panel2, in: Circle())
+            }
+            .accessibilityLabel("Aggiorna registrazioni")
         }
     }
 
@@ -366,7 +373,7 @@ struct RecordingsView: View {
                     let left = max(0, min(1, (segment.start - dayStart) / 86400))
                     let right = max(left, min(1, (segment.start + segment.dur - dayStart) / 86400))
                     let rect = CGRect(x: size.width * CGFloat(left), y: 15,
-                                      width: max(1, size.width * CGFloat(right - left)), height: 10)
+                                      width: max(0, size.width * CGFloat(right - left)), height: 10)
                     context.fill(Path(rect), with: .color(Theme.accent))
                 }
                 for event in recordingEvents {
@@ -423,7 +430,7 @@ struct RecordingsView: View {
                 Text("Nessun evento rilevato in questa giornata.")
                     .font(.subheadline).foregroundStyle(Theme.dim).padding(.vertical, 8)
             } else {
-                ForEach(Array(recordingEvents.prefix(showAllEvents ? recordingEvents.count : 8))) { event in
+                ForEach(Array(recordingEvents.prefix(eventLimit))) { event in
                     Button {
                         Haptics.tap()
                         play(at: max(0, event.start / 1000 - dayStart - 5))
@@ -452,8 +459,8 @@ struct RecordingsView: View {
                     .buttonStyle(PressableButtonStyle())
                 }
                 if recordingEvents.count > 8 {
-                    Button(showAllEvents ? "Mostra meno" : "Mostra tutti gli eventi") {
-                        showAllEvents.toggle()
+                    Button(eventLimit >= recordingEvents.count ? "Mostra meno" : "Mostra altri eventi") {
+                        eventLimit = eventLimit >= recordingEvents.count ? 8 : min(recordingEvents.count, eventLimit + 20)
                     }
                     .font(.caption.bold()).foregroundStyle(Theme.accentSoft)
                     .frame(maxWidth: .infinity).padding(.top, 4)
@@ -596,9 +603,17 @@ struct RecordingsView: View {
     private func loadDays() async {
         guard let camera else { return }
         let selectedCamera = camera.id
+        let requestID = UUID()
+        loadRequest = requestID
+        loadingSegments = true
+        segments = []
+        recordingEvents = []
+        player.pause()
+        previewPlayer.pause()
+        playing = false
         do {
             let loaded = try await store.days(for: camera)
-            guard cameraId == selectedCamera else { return }
+            guard cameraId == selectedCamera && loadRequest == requestID else { return }
             days = loaded
             let missingJump = armedJump.map { jump in !days.contains(where: { $0.day == jump.day }) } ?? false
             if missingJump { armedJump = nil }
@@ -609,11 +624,16 @@ struct RecordingsView: View {
                 player.pause()
                 player.replaceCurrentItem(with: nil)
                 error = ""
+                loadingSegments = false
                 return
             }
             await loadSegments()
             if missingJump && error.isEmpty { error = "La registrazione di questo evento non è più disponibile." }
-        } catch { self.error = error.localizedDescription }
+        } catch {
+            guard loadRequest == requestID else { return }
+            self.error = error.localizedDescription
+            loadingSegments = false
+        }
     }
 
     private func loadSegments() async {
@@ -625,6 +645,9 @@ struct RecordingsView: View {
         player.pause()
         previewPlayer.pause()
         playing = false
+        previewUnavailable = false
+        segments = []
+        recordingEvents = []
         setZoom(1)
         player.replaceCurrentItem(with: nil)
         do {
@@ -634,10 +657,11 @@ struct RecordingsView: View {
             let dayStartMs = dayStart * 1000
             recordingEvents = ((try? await store.events(for: camera, day: selectedDay)) ?? [])
                 .filter { $0.cam == camera.id && $0.start >= dayStartMs && $0.start < dayStartMs + 86400000 }
+                .sorted { $0.start > $1.start }
             guard loadRequest == requestID else { return }
             activeName = ""
             previewName = ""
-            showAllEvents = false
+            eventLimit = 8
             if armedJump != nil { seekToArmedJump() }
             else if let first = segments.first { play(at: max(0, first.start - dayStart)) }
             else { seconds = 0 }
