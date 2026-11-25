@@ -2,6 +2,11 @@
 
 Client iOS per **EAC Vision Home Assistant** e **EAC Vision AI Home Assistant**. Interfaccia rinnovata in stile app moderna: navigazione a schede in basso (Live, Registrazioni, Eventi, Impostazioni), sfondo sfumato blu scuro, pannelli in vetro, chip di comando e feedback aptico. Mostra le camere ONVIF selezionate nella vista, live HLS con audio nella vista singola, registrazioni H24 con anteprima durante lo scorrimento e gli eventi della versione AI.
 
+## Novità 1.2.2
+
+- Il salto da un evento AI recente aspetta la registrazione corrispondente e la apre automaticamente appena il segmento viene chiuso, senza avviare un video precedente.
+- Nelle registrazioni viene segnalato quando il profilo ONVIF della telecamera non fornisce una traccia audio. Le nuove registrazioni includono l'audio solo se la telecamera lo invia.
+
 ## Novità 1.2.1
 
 - Schermata **Registrazioni** ricostruita: selezione della camera e del giorno, video grande, comandi di riproduzione, audio, velocità e zoom raccolti in modo chiaro.
@@ -21,7 +26,7 @@ Client iOS per **EAC Vision Home Assistant** e **EAC Vision AI Home Assistant**.
 
 ## Collegamento
 
-- Aggiorna l'app Home Assistant: edizione senza AI **0.5.4** o edizione AI **0.1.9**. Le nuove registrazioni includono l'audio se la camera lo fornisce; gli avvisi facoltativi tramite Home Assistant Companion sono disponibili in entrambe le edizioni.
+- Aggiorna l'app Home Assistant: edizione senza AI **0.5.4** o edizione AI **0.1.10**. Le nuove registrazioni includono l'audio se la camera lo fornisce; gli avvisi facoltativi tramite Home Assistant Companion sono disponibili in entrambe le edizioni.
 - In casa puoi inserire l'IP o l'URL di Home Assistant, anche con `:8123`: l'app prova automaticamente le porte 8766 (senza AI) e 8767 (AI).
 - Con Tailscale attivo su iPhone e sul dispositivo HA, inserisci l'IP `100.x.y.z` del dispositivo HA. Se la connessione non riesce, apri `http://100.x.y.z:8766/eacnvr/info` in Safari (o `:8767` per AI) per verificare la porta; non serve il codice per questa verifica.
 - Inserisci il codice delle app mostrato nelle impostazioni di EAC Vision su HA. Il codice viene conservato nel portachiavi iOS.

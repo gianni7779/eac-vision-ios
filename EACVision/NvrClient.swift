@@ -7,6 +7,7 @@ struct NvrCamera: Identifiable, Decodable, Hashable {
     let name: String
     let recorded: Bool?
     let recording: Bool?
+    let recordedAudio: Bool?
     let ezPtz: Bool?
     let ezSiren: Bool?
 }

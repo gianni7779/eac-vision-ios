@@ -32,6 +32,8 @@ struct RecordingsView: View {
     @State private var speed = 1.0
     @State private var playing = false
     @State private var armedJump: RecordingJump?
+    @State private var eventRetryTask: Task<Void, Never>?
+    @State private var eventRetryUntil = Date.distantPast
     @State private var eventLimit = 8
     @State private var loadingSegments = false
     @State private var loadRequest = UUID()
@@ -50,6 +52,11 @@ struct RecordingsView: View {
                 if !inStack { header }
                 if !error.isEmpty { errorBanner }
                 cameraPicker
+                if camera?.recordedAudio == false {
+                    Label("Questa telecamera non invia audio nel flusso ONVIF. Attiva il microfono e l’audio nel profilo della telecamera.", systemImage: "speaker.slash")
+                        .font(.caption).foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 dayPicker
                 recordingStage
                 timelineCard
@@ -75,7 +82,7 @@ struct RecordingsView: View {
             }
         }
         .onChange(of: cameraId) { _, _ in Task { await loadDays() } }
-        .onAppear { applyPendingJump() }
+        .onAppear { applyPendingJump(); if armedJump != nil { scheduleEventRetry() } }
         .onChange(of: store.pendingJump) { _, _ in applyPendingJump() }
         .onReceive(Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()) { _ in
             guard !dragging, let segment = segments.first(where: { $0.name == activeName }),
@@ -91,6 +98,7 @@ struct RecordingsView: View {
         .onDisappear {
             player.pause(); previewPlayer.pause(); playing = false
             dragging = false; previewUnavailable = false
+            eventRetryTask?.cancel()
         }
         .onAppear { try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback) }
     }
@@ -542,6 +550,7 @@ struct RecordingsView: View {
         store.pendingJump = nil
         guard store.allCameras.contains(where: { $0.id == jump.cameraId }) else { return }
         armedJump = jump
+        eventRetryUntil = Date().addingTimeInterval(90)
         if cameraId != jump.cameraId {
             cameraId = jump.cameraId
             if day != jump.day { day = jump.day }
@@ -555,8 +564,34 @@ struct RecordingsView: View {
 
     private func seekToArmedJump() {
         guard let jump = armedJump else { return }
+        let target = dayStart + jump.at
+        guard let segment = segments.first(where: {
+            $0.start <= target + 5 && target + 5 < $0.start + $0.dur
+        }) else {
+            error = "Il video dell’evento è in preparazione…"
+            scheduleEventRetry()
+            return
+        }
         armedJump = nil
-        play(at: max(0, min(86399, jump.at)))
+        eventRetryTask?.cancel()
+        error = ""
+        play(at: max(0, min(86399, max(target, segment.start) - dayStart)))
+    }
+
+    private func scheduleEventRetry() {
+        eventRetryTask?.cancel()
+        guard armedJump != nil else { return }
+        guard Date() < eventRetryUntil else {
+            armedJump = nil
+            error = "La registrazione dell’evento non è ancora disponibile. Riprova tra poco."
+            return
+        }
+        eventRetryTask = Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled, armedJump != nil else { return }
+            if day.isEmpty { await loadDays() }
+            else { await loadSegments() }
+        }
     }
 
     private func segment(at value: Double) -> NvrSegment? {
@@ -624,8 +659,13 @@ struct RecordingsView: View {
             let loaded = try await store.days(for: camera)
             guard cameraId == selectedCamera && loadRequest == requestID else { return }
             days = loaded
-            let missingJump = armedJump.map { jump in !days.contains(where: { $0.day == jump.day }) } ?? false
-            if missingJump { armedJump = nil }
+            let waitingForDay = armedJump.map { jump in !days.contains(where: { $0.day == jump.day }) } ?? false
+            if waitingForDay {
+                error = "Il video dell’evento è in preparazione…"
+                loadingSegments = false
+                scheduleEventRetry()
+                return
+            }
             if !days.contains(where: { $0.day == day }) { day = days.first?.day ?? "" }
             if day.isEmpty {
                 segments = []
@@ -637,7 +677,6 @@ struct RecordingsView: View {
                 return
             }
             await loadSegments()
-            if missingJump && error.isEmpty { error = "La registrazione di questo evento non è più disponibile." }
         } catch {
             guard loadRequest == requestID else { return }
             self.error = error.localizedDescription
@@ -674,7 +713,7 @@ struct RecordingsView: View {
             if armedJump != nil { seekToArmedJump() }
             else if let first = segments.first { play(at: max(0, first.start - dayStart)) }
             else { seconds = 0 }
-            error = ""
+            if armedJump == nil { error = "" }
             loadingSegments = false
         } catch {
             guard loadRequest == requestID else { return }
