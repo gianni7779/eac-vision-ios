@@ -52,8 +52,8 @@ struct RecordingsView: View {
                 cameraPicker
                 dayPicker
                 recordingStage
-                playbackControls
                 timelineCard
+                playbackControls
                 eventsCard
             }
             .padding(.horizontal, 14)
@@ -184,7 +184,7 @@ struct RecordingsView: View {
     private var recordingStage: some View {
         ZStack {
             Color.black
-            ZoomablePlayerSurface(player: player, onZoom: { zoom = Double($0) },
+            ZoomablePlayerSurface(player: player, onTap: { togglePlayback() }, onZoom: { zoom = Double($0) },
                                   zoomRequest: zoomRequest, requestedZoom: CGFloat(zoom))
                 .opacity(dragging ? 0 : 1)
                 .allowsHitTesting(!dragging)
@@ -205,6 +205,12 @@ struct RecordingsView: View {
                     .padding(11).background(.black.opacity(0.75), in: Capsule())
             }
             if loadingSegments { ProgressView().tint(Theme.accentSoft).scaleEffect(1.3) }
+            if !playing && !dragging && !segments.isEmpty && !loadingSegments {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 23, weight: .bold)).foregroundStyle(.white)
+                    .frame(width: 58, height: 58).background(.black.opacity(0.65), in: Circle())
+                    .allowsHitTesting(false)
+            }
             VStack {
                 HStack {
                     Label(dragging ? "ANTEPRIMA" : "REGISTRAZIONE", systemImage: dragging ? "hand.draw" : "record.circle")
@@ -241,11 +247,7 @@ struct RecordingsView: View {
             HStack(spacing: 19) {
                 Spacer(minLength: 0)
                 transportButton("Indietro 10 secondi", symbol: "gobackward.10") { play(at: max(0, seconds - 10)) }
-                Button {
-                    Haptics.tap()
-                    if playing { player.pause(); playing = false }
-                    else { player.play(); player.rate = Float(speed); playing = true }
-                } label: {
+                Button { togglePlayback() } label: {
                     Image(systemName: playing ? "pause.fill" : "play.fill")
                         .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(.white)
@@ -313,6 +315,13 @@ struct RecordingsView: View {
         .buttonStyle(PressableButtonStyle())
         .accessibilityLabel(title)
         .disabled(segments.isEmpty)
+    }
+
+    private func togglePlayback() {
+        guard !segments.isEmpty else { return }
+        Haptics.tap()
+        if playing { player.pause(); playing = false }
+        else { player.play(); player.rate = Float(speed); playing = true }
     }
 
     private var timelineCard: some View {
