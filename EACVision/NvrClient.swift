@@ -288,14 +288,13 @@ final class NvrStore: ObservableObject {
         }
     }
 
-    func ezvizMove(camera: NvrCamera, direction: String) async throws {
-        guard camera.ezPtz == true, ["up", "down", "left", "right"].contains(direction) else {
+    func ezvizPtz(camera: NvrCamera, direction: String, action: String) async throws {
+        guard camera.ezPtz == true, ["up", "down", "left", "right"].contains(direction),
+              ["start", "stop"].contains(action) else {
             throw NvrError(message: "PTZ EZVIZ non disponibile")
         }
         let query = [URLQueryItem(name: "cam", value: camera.id), URLQueryItem(name: "dir", value: direction)]
-        try await control("/eacnvr/ptz", query: query + [URLQueryItem(name: "action", value: "start")])
-        try? await Task.sleep(for: .milliseconds(350))
-        try await control("/eacnvr/ptz", query: query + [URLQueryItem(name: "action", value: "stop")])
+        try await control("/eacnvr/ptz", query: query + [URLQueryItem(name: "action", value: action)])
     }
 
     func ezvizSiren(camera: NvrCamera, enabled: Bool) async throws {

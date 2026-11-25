@@ -207,8 +207,10 @@ struct CameraDetailView: View {
     @State private var streamMessage = ""
     @State private var controlError = ""
     @State private var showSiren = false
+    @State private var showPtzPanel = false
+    @State private var ptzStartTask: Task<Void, Never>?
     @State private var zoom = 1.0
-    @GestureState private var pinchScale: CGFloat = 1
+    @State private var zoomRequest = 0
 
     init(camera: NvrCamera, startTour: Bool = false) {
         self.camera = camera
@@ -223,28 +225,34 @@ struct CameraDetailView: View {
             Color.black.ignoresSafeArea()
             CameraSnapshot(camera: activeCamera, tick: snapshotTick)
                 .aspectRatio(16/9, contentMode: .fit)
-            PlayerSurface(player: player, onReady: { ready in
+            ZoomablePlayerSurface(player: player, onReady: { ready in
                 streamReady = ready
                 if ready { streamMessage = "" }
-            })
+            }, onTap: { withAnimation { controlsVisible.toggle() } },
+               onSwipe: { step in switchCamera(step) },
+               onZoom: { value in zoom = Double(value) },
+               zoomRequest: zoomRequest, requestedZoom: CGFloat(zoom))
                 .aspectRatio(16/9, contentMode: .fit)
-                .scaleEffect(CGFloat(zoom) * pinchScale)
                 .opacity(streamReady ? 1 : 0.01)
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation { controlsVisible.toggle() } }
-                .simultaneousGesture(MagnificationGesture()
-                    .updating($pinchScale) { value, state, _ in state = value }
-                    .onEnded { value in zoom = min(4, max(1, zoom * Double(value))) })
             if controlsVisible {
                 VStack {
                     HStack(spacing: 10) {
-                        Button { dismiss() } label: { Label("Indietro", systemImage: "chevron.left") }
-                        Spacer()
-                        Text(activeCamera.name).font(.subheadline.bold()).lineLimit(1)
-                        Spacer()
-                        Text("LIVE").font(.caption2.bold()).foregroundStyle(accent)
+                        Button { dismiss() } label: {
+                            Image(systemName: "chevron.left").font(.headline.bold())
+                                .frame(width: 38, height: 38).background(panel2, in: Circle())
+                        }.accessibilityLabel("Torna alla griglia")
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(activeCamera.name).font(.subheadline.bold()).lineLimit(1)
+                            Text(touring ? "Ronda · ogni \(tourSeconds) secondi" : "Telecamera in diretta")
+                                .font(.caption2).foregroundStyle(dim)
+                        }
+                        Spacer(minLength: 4)
+                        Text(touring ? "RONDA" : "LIVE")
+                            .font(.caption2.bold()).foregroundStyle(.white)
+                            .padding(.horizontal, 9).padding(.vertical, 5)
+                            .background(touring ? Color.green.opacity(0.65) : accent.opacity(0.8), in: Capsule())
                     }
-                    .padding(12).background(panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
+                    .padding(10).background(panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 16))
                     if !streamReady {
                         Text(streamMessage.isEmpty ? "Collegamento al live… Anteprima disponibile." : streamMessage)
                             .font(.caption).foregroundStyle(.white)
@@ -255,58 +263,61 @@ struct CameraDetailView: View {
                             .padding(10).background(panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
                     }
                     Spacer()
-                    ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 9) {
-                        Button {
-                            audioOn.toggle()
-                            player.isMuted = !audioOn
-                        } label: {
-                            Label(audioOn ? "Audio attivo" : "Audio", systemImage: audioOn ? "speaker.wave.2" : "speaker.slash")
-                        }
-                        .disabled(streamMode == 1)
-                        Button { streamMode = 0; start() } label: { Label("Ricollega", systemImage: "arrow.clockwise") }
-                        Button { zoom = 1 } label: { Label("Zoom \(Int(zoom))×", systemImage: "plus.magnifyingglass") }
-                        NavigationLink(value: AppPage.recordings) {
-                            Label("Archivio", systemImage: "clock.arrow.circlepath")
-                        }
-                        if store.cameras.count > 1 {
-                            Button { switchCamera(-1) } label: { Label("Precedente", systemImage: "chevron.left") }
-                            Button { switchCamera(1) } label: { Label("Successiva", systemImage: "chevron.right") }
-                            Button {
-                                touring.toggle()
-                                tourCountdown = tourSeconds
-                                if touring { controlsVisible = false; audioOn = false; player.isMuted = true }
-                            } label: { Label(touring ? "Ferma ronda" : "Ronda", systemImage: touring ? "stop.fill" : "play.square.stack") }
-                        }
-                    } }
-                    .font(.system(size: 13, weight: .medium))
-                    .buttonStyle(.plain)
-                    .padding(12)
-                    .frame(maxWidth: .infinity)
-                    .background(panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
-                    if activeCamera.ezPtz == true || activeCamera.ezSiren == true {
-                        VStack(spacing: 8) {
-                            if activeCamera.ezPtz == true {
-                                Text("PTZ EZVIZ").font(.caption.bold())
-                                HStack(spacing: 16) {
+                    VStack(spacing: 9) {
+                        if showPtzPanel && activeCamera.ezPtz == true {
+                            VStack(spacing: 6) {
+                                Text("Muovi la telecamera").font(.caption.bold()).foregroundStyle(dim)
+                                ptzButton("Su", symbol: "arrow.up", direction: "up")
+                                HStack(spacing: 30) {
                                     ptzButton("Sinistra", symbol: "arrow.left", direction: "left")
-                                    VStack(spacing: 7) {
-                                        ptzButton("Su", symbol: "arrow.up", direction: "up")
-                                        ptzButton("Giù", symbol: "arrow.down", direction: "down")
-                                    }
+                                    ptzButton("Giù", symbol: "arrow.down", direction: "down")
                                     ptzButton("Destra", symbol: "arrow.right", direction: "right")
                                 }
-                            }
-                            if activeCamera.ezSiren == true {
-                                Button("Sirena", systemImage: "alarm") { showSiren = true }
-                                    .tint(.red)
-                            }
-                            if !controlError.isEmpty { Text(controlError).font(.caption).foregroundStyle(.orange) }
+                                if !controlError.isEmpty { Text(controlError).font(.caption).foregroundStyle(.orange) }
+                            }.frame(maxWidth: .infinity).padding(9)
+                                .background(panel2, in: RoundedRectangle(cornerRadius: 12))
                         }
-                        .buttonStyle(.bordered)
-                        .padding(10)
-                        .frame(maxWidth: .infinity)
-                        .background(panel.opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
+                        if zoom > 1.05 {
+                            Text("Zoom \(zoom.formatted(.number.precision(.fractionLength(1))))× · trascina per esplorare · doppio tocco per adattare")
+                                .font(.caption2).foregroundStyle(dim).frame(maxWidth: .infinity)
+                        }
+                        HStack(spacing: 8) {
+                            viewerTile(audioOn ? "Audio acceso" : "Audio", symbol: audioOn ? "speaker.wave.2.fill" : "speaker.slash") {
+                                guard streamMode != 1 else { return }
+                                audioOn.toggle(); player.isMuted = !audioOn
+                            }
+                            NavigationLink(value: AppPage.recordings) {
+                                viewerTileLabel("Archivio", symbol: "clock.arrow.circlepath")
+                            }.buttonStyle(.plain)
+                            if store.cameras.count > 1 {
+                                viewerTile(touring ? "Ferma ronda" : "Ronda", symbol: touring ? "stop.fill" : "play.square.stack.fill", active: touring) {
+                                    touring.toggle(); tourCountdown = tourSeconds
+                                    if touring { controlsVisible = false; audioOn = false; player.isMuted = true }
+                                }
+                            }
+                        }
+                        HStack(spacing: 8) {
+                            if store.cameras.count > 1 {
+                                viewerTile("Precedente", symbol: "chevron.left") { switchCamera(-1) }
+                                viewerTile("Successiva", symbol: "chevron.right") { switchCamera(1) }
+                            }
+                            if activeCamera.ezPtz == true {
+                                viewerTile("PTZ", symbol: "arrow.up.left.and.arrow.down.right", active: showPtzPanel) {
+                                    showPtzPanel.toggle()
+                                }
+                            }
+                            Menu {
+                                Button("Ricollega il video", systemImage: "arrow.clockwise") { streamMode = 0; start() }
+                                Button("Adatta il video", systemImage: "arrow.down.right.and.arrow.up.left") { zoom = 1; zoomRequest += 1 }
+                                if activeCamera.ezSiren == true {
+                                    Button("Sirena EZVIZ", systemImage: "alarm") { showSiren = true }
+                                }
+                            } label: { viewerTileLabel("Altro", symbol: "ellipsis.circle") }
+                        }
                     }
+                    .padding(10)
+                    .background(panel.opacity(0.95), in: RoundedRectangle(cornerRadius: 18))
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(line))
                 }.padding(10)
             }
         }
@@ -324,9 +335,11 @@ struct CameraDetailView: View {
         .onDisappear { touring = false; player.pause(); player.replaceCurrentItem(with: nil) }
         .onChange(of: activeId) { _, _ in
             zoom = 1
+            zoomRequest += 1
             streamMode = 0
             streamMessage = ""
             controlError = ""
+            showPtzPanel = false
             tourCountdown = tourSeconds
             start()
         }
@@ -364,12 +377,42 @@ struct CameraDetailView: View {
         player.play()
     }
 
-    private func ptzButton(_ title: String, symbol: String, direction: String) -> some View {
-        Button { Task {
-            do { try await store.ezvizMove(camera: activeCamera, direction: direction); controlError = "" }
-            catch { controlError = error.localizedDescription }
-        } } label: { Label(title, systemImage: symbol).labelStyle(.iconOnly).frame(width: 38, height: 38) }
+    private func viewerTileLabel(_ title: String, symbol: String, active: Bool = false) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: symbol).font(.system(size: 20, weight: .semibold))
+            Text(title).font(.system(size: 11, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .foregroundStyle(active ? .white : dim)
+        .frame(maxWidth: .infinity, minHeight: 54)
+        .background(active ? accent.opacity(0.28) : panel2, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(active ? accent : line))
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func viewerTile(_ title: String, symbol: String, active: Bool = false,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) { viewerTileLabel(title, symbol: symbol, active: active) }
+            .buttonStyle(.plain)
             .accessibilityLabel(title)
+    }
+
+    private func ptzButton(_ title: String, symbol: String, direction: String) -> some View {
+        PtzPressButton(title: title, symbol: symbol, onStart: {
+            let selected = activeCamera
+            ptzStartTask = Task {
+                do { try await store.ezvizPtz(camera: selected, direction: direction, action: "start"); controlError = "" }
+                catch { controlError = error.localizedDescription }
+            }
+        }, onStop: {
+            let selected = activeCamera
+            let started = ptzStartTask
+            ptzStartTask = nil
+            Task {
+                await started?.value
+                do { try await store.ezvizPtz(camera: selected, direction: direction, action: "stop") }
+                catch { controlError = error.localizedDescription }
+            }
+        })
     }
 
     private func setSiren(_ enabled: Bool) {
@@ -383,6 +426,30 @@ struct CameraDetailView: View {
         guard store.cameras.count > 1, let index = store.cameras.firstIndex(where: { $0.id == activeId }) else { return }
         activeId = store.cameras[(index + step + store.cameras.count) % store.cameras.count].id
         tourCountdown = tourSeconds
+    }
+}
+
+private struct PtzPressButton: View {
+    let title: String
+    let symbol: String
+    let onStart: () -> Void
+    let onStop: () -> Void
+    @State private var pressing = false
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 54, height: 48)
+            .background(pressing ? accent.opacity(0.7) : panel, in: RoundedRectangle(cornerRadius: 12))
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { _ in if !pressing { pressing = true; onStart() } }
+                .onEnded { _ in if pressing { pressing = false; onStop() } })
+            .onDisappear { if pressing { pressing = false; onStop() } }
+            .accessibilityLabel(title)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { onStart(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: onStop) }
     }
 }
 
@@ -413,6 +480,111 @@ struct PlayerSurface: UIViewRepresentable {
     func updateUIView(_ view: PlayerLayerView, context: Context) {
         view.onReady = onReady
         if view.videoLayer.player !== player { view.videoLayer.player = player }
+    }
+}
+
+final class ZoomPlayerView: UIView, UIScrollViewDelegate {
+    let scroll = UIScrollView()
+    let video = PlayerLayerView()
+    var onTap: (() -> Void)?
+    var onSwipe: ((Int) -> Void)?
+    var onZoom: ((CGFloat) -> Void)?
+    var resetVersion = 0
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        clipsToBounds = true
+        scroll.delegate = self
+        scroll.minimumZoomScale = 1
+        scroll.maximumZoomScale = 6
+        scroll.showsHorizontalScrollIndicator = false
+        scroll.showsVerticalScrollIndicator = false
+        scroll.contentInsetAdjustmentBehavior = .never
+        scroll.bounces = false
+        scroll.bouncesZoom = true
+        scroll.backgroundColor = .black
+        addSubview(scroll)
+        video.videoLayer.videoGravity = .resizeAspect
+        video.watchReadiness()
+        scroll.addSubview(video)
+
+        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(didDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        let singleTap = UITapGestureRecognizer(target: self, action: #selector(didTap))
+        singleTap.require(toFail: doubleTap)
+        scroll.addGestureRecognizer(doubleTap)
+        scroll.addGestureRecognizer(singleTap)
+        for direction in [UISwipeGestureRecognizer.Direction.left, .right] {
+            let swipe = UISwipeGestureRecognizer(target: self, action: #selector(didSwipe(_:)))
+            swipe.direction = direction
+            scroll.addGestureRecognizer(swipe)
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let changed = scroll.bounds.size != bounds.size
+        scroll.frame = bounds
+        if changed {
+            scroll.setZoomScale(1, animated: false)
+            video.frame = scroll.bounds
+            scroll.contentSize = scroll.bounds.size
+        }
+    }
+
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? { video }
+
+    func scrollViewDidZoom(_ scrollView: UIScrollView) {
+        let horizontal = max(0, (scrollView.bounds.width - scrollView.contentSize.width) / 2)
+        let vertical = max(0, (scrollView.bounds.height - scrollView.contentSize.height) / 2)
+        scrollView.contentInset = UIEdgeInsets(top: vertical, left: horizontal, bottom: vertical, right: horizontal)
+        let value = scrollView.zoomScale
+        DispatchQueue.main.async { self.onZoom?(value) }
+    }
+
+    @objc private func didTap() { onTap?() }
+
+    @objc private func didDoubleTap(_ gesture: UITapGestureRecognizer) {
+        if scroll.zoomScale > 1.05 {
+            scroll.setZoomScale(1, animated: true)
+        } else {
+            let scale: CGFloat = 2.5
+            let point = gesture.location(in: video)
+            let size = CGSize(width: scroll.bounds.width / scale, height: scroll.bounds.height / scale)
+            scroll.zoom(to: CGRect(x: point.x - size.width / 2, y: point.y - size.height / 2,
+                                   width: size.width, height: size.height), animated: true)
+        }
+    }
+
+    @objc private func didSwipe(_ gesture: UISwipeGestureRecognizer) {
+        guard scroll.zoomScale <= 1.05 else { return }
+        onSwipe?(gesture.direction == .left ? 1 : -1)
+    }
+}
+
+struct ZoomablePlayerSurface: UIViewRepresentable {
+    let player: AVPlayer
+    var onReady: ((Bool) -> Void)? = nil
+    var onTap: (() -> Void)? = nil
+    var onSwipe: ((Int) -> Void)? = nil
+    var onZoom: ((CGFloat) -> Void)? = nil
+    var zoomRequest = 0
+    var requestedZoom: CGFloat = 1
+
+    func makeUIView(context: Context) -> ZoomPlayerView { ZoomPlayerView() }
+
+    func updateUIView(_ view: ZoomPlayerView, context: Context) {
+        view.video.onReady = onReady
+        if view.video.videoLayer.player !== player { view.video.videoLayer.player = player }
+        view.onTap = onTap
+        view.onSwipe = onSwipe
+        view.onZoom = onZoom
+        if view.resetVersion != zoomRequest {
+            view.resetVersion = zoomRequest
+            view.scroll.setZoomScale(min(6, max(1, requestedZoom)), animated: true)
+        }
     }
 }
 
@@ -454,7 +626,7 @@ struct RecordingsView: View {
     @State private var error = ""
     @State private var audioOn = true
     @State private var zoom = 1.0
-    @GestureState private var pinchScale: CGFloat = 1
+    @State private var zoomRequest = 0
     @State private var speed = 1.0
     @State private var playing = false
 
@@ -499,11 +671,8 @@ struct RecordingsView: View {
                 }
                 ZStack {
                     Color.black
-                    PlayerSurface(player: player)
-                        .scaleEffect(CGFloat(zoom) * pinchScale)
-                        .simultaneousGesture(MagnificationGesture()
-                            .updating($pinchScale) { value, state, _ in state = value }
-                            .onEnded { value in zoom = min(4, max(1, zoom * Double(value))) })
+                    ZoomablePlayerSurface(player: player, onZoom: { value in zoom = Double(value) },
+                                          zoomRequest: zoomRequest, requestedZoom: CGFloat(zoom))
                 }
                     .aspectRatio(16/9, contentMode: .fit)
                     .clipped()
@@ -527,9 +696,9 @@ struct RecordingsView: View {
                             speed = speeds[(speeds.firstIndex(of: speed).map { $0 + 1 } ?? 1) % speeds.count]
                             if player.rate > 0 { player.rate = Float(speed) }
                         }
-                        Button("Zoom −", systemImage: "minus.magnifyingglass") { zoom = max(1, zoom - 0.5) }
-                        Button("Zoom +", systemImage: "plus.magnifyingglass") { zoom = min(4, zoom + 0.5) }
-                        Button("Adatta", systemImage: "arrow.down.right.and.arrow.up.left") { zoom = 1 }
+                        Button("Zoom −", systemImage: "minus.magnifyingglass") { setZoom(max(1, zoom - 0.5)) }
+                        Button("Zoom +", systemImage: "plus.magnifyingglass") { setZoom(min(6, zoom + 0.5)) }
+                        Button("Adatta", systemImage: "arrow.down.right.and.arrow.up.left") { setZoom(1) }
                     }.buttonStyle(.bordered).font(.caption)
                 }
                 Text(dragging ? "Anteprima · \(clock(seconds))" : "\(day) · \(clock(seconds))")
@@ -644,6 +813,11 @@ struct RecordingsView: View {
         return String(format: "%02d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
     }
 
+    private func setZoom(_ value: Double) {
+        zoom = value
+        zoomRequest += 1
+    }
+
     private func segment(at value: Double) -> NvrSegment? {
         let target = dayStart + value
         return segments.first { $0.start <= target && target < $0.start + $0.dur }
@@ -701,6 +875,7 @@ struct RecordingsView: View {
         let selectedCamera = camera.id, selectedDay = day
         do {
             player.pause()
+            setZoom(1)
             playing = false
             player.replaceCurrentItem(with: nil)
             let loaded = try await store.segments(for: camera, day: selectedDay)
