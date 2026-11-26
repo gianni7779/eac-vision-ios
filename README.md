@@ -4,7 +4,7 @@ Client iOS per **EAC Vision Home Assistant** e **EAC Vision AI Home Assistant**.
 
 ## Novità 1.2.6
 
-- Scorrimento delle registrazioni più regolare anche all'indietro: l'anteprima mostra un fotogramma fermo e processa solo l'ultima posizione richiesta, senza riprodurre un secondo video durante il trascinamento.
+- Scorrimento delle registrazioni più regolare anche all'indietro: l'anteprima mostra un fotogramma fermo e processa solo l'ultima posizione richiesta, senza riprodurre un secondo video durante il trascinamento. La barra disegna i segmenti in un unico passaggio anche quando ci sono molti file da un minuto.
 - Al rilascio della linea il video riparte dopo il salto completato; i salti precedenti vengono annullati.
 - Pulsante per aprire le registrazioni a schermo intero, con linea del tempo, audio, velocità e comandi di riproduzione accessibili.
 

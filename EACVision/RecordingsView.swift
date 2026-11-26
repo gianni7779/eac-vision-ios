@@ -493,15 +493,18 @@ struct RecordingsView: View {
         GeometryReader { geo in
             let width = max(1, geo.size.width)
             Canvas { context, size in
+                let start = dayStart
                 let track = CGRect(x: 0, y: 15, width: size.width, height: 10)
                 context.fill(Path(roundedRect: track, cornerRadius: 5), with: .color(.white.opacity(0.15)))
+                var recorded = Path()
                 for segment in segments {
-                    let left = max(0, min(1, (segment.start - dayStart) / 86400))
-                    let right = max(left, min(1, (segment.start + segment.dur - dayStart) / 86400))
+                    let left = max(0, min(1, (segment.start - start) / 86400))
+                    let right = max(left, min(1, (segment.start + segment.dur - start) / 86400))
                     let rect = CGRect(x: size.width * CGFloat(left), y: 15,
                                       width: max(0, size.width * CGFloat(right - left)), height: 10)
-                    context.fill(Path(rect), with: .color(Theme.accent))
+                    recorded.addRect(rect)
                 }
+                context.fill(recorded, with: .color(Theme.accent))
                 for (bin, peak) in noiseBins {
                     let level = max(0, min(1, (peak + 55) / 45))
                     guard level > 0 else { continue }
@@ -511,7 +514,7 @@ struct RecordingsView: View {
                     context.fill(Path(rect), with: .color(.yellow.opacity(0.35 + level * 0.65)))
                 }
                 for event in recordingEvents {
-                    let position = (event.start / 1000 - dayStart) / 86400
+                    let position = (event.start / 1000 - start) / 86400
                     guard position >= 0 && position < 1 else { continue }
                     let rect = CGRect(x: max(0, size.width * CGFloat(position) - 2), y: 10, width: 4, height: 20)
                     context.fill(Path(rect), with: .color(eventColor(event.label)))
