@@ -19,13 +19,14 @@ struct RecordingsView: View {
     @State private var recordingEvents: [NvrEvent] = []
     @State private var noiseBins: [Int: Double] = [:]
     @State private var player = AVPlayer()
-    @State private var previewPlayer = AVPlayer()
+    @StateObject private var preview = RecordingPreview()
     @State private var activeName = ""
-    @State private var previewName = ""
     @State private var seconds = 0.0
     @State private var dragging = false
     @State private var previewUnavailable = false
-    @State private var lastPreview = Date.distantPast
+    @State private var fullscreen = false
+    @State private var seekingPlayback = false
+    @State private var playRequest = UUID()
     @State private var error = ""
     @State private var audioOn = true
     @State private var zoom = 1.0
@@ -73,6 +74,7 @@ struct RecordingsView: View {
         .navigationTitle("Registrazioni")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(inStack ? .visible : .hidden, for: .navigationBar)
+        .fullScreenCover(isPresented: $fullscreen) { fullscreenPlayer }
         .task(id: store.allCameras) {
             if cameraId.isEmpty {
                 if let initialCameraId, store.allCameras.contains(where: { $0.id == initialCameraId }) {
@@ -86,7 +88,7 @@ struct RecordingsView: View {
         .onAppear { applyPendingJump(); if armedJump != nil { scheduleEventRetry() } }
         .onChange(of: store.pendingJump) { _, _ in applyPendingJump() }
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
-            guard !dragging, let segment = segments.first(where: { $0.name == activeName }),
+            guard !dragging, !seekingPlayback, let segment = segments.first(where: { $0.name == activeName }),
                   player.currentItem != nil, player.currentTime().seconds.isFinite else { return }
             seconds = max(0, min(86399, segment.start - dayStart + player.currentTime().seconds))
         }
@@ -97,11 +99,13 @@ struct RecordingsView: View {
             playSegment(segments[index + 1], offset: 0)
         }
         .onDisappear {
-            player.pause(); previewPlayer.pause(); playing = false
-            previewPlayer.replaceCurrentItem(with: nil)
-            previewName = ""
-            dragging = false; previewUnavailable = false
-            eventRetryTask?.cancel()
+            if !fullscreen {
+                playRequest = UUID()
+                player.pause(); playing = false; seekingPlayback = false
+                preview.clear()
+                dragging = false; previewUnavailable = false
+                eventRetryTask?.cancel()
+            }
         }
         .onAppear { try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback) }
     }
@@ -192,14 +196,14 @@ struct RecordingsView: View {
         }
     }
 
-    private var recordingStage: some View {
+    private var recordingVideo: some View {
         ZStack {
             Color.black
             ZoomablePlayerSurface(player: player, onTap: { togglePlayback() }, onZoom: { zoom = Double($0) },
                                   zoomRequest: zoomRequest, requestedZoom: CGFloat(zoom))
                 .opacity(dragging ? 0 : 1)
                 .allowsHitTesting(!dragging)
-            PlayerSurface(player: previewPlayer)
+            PlayerSurface(player: preview.player)
                 .opacity(dragging ? 1 : 0)
                 .allowsHitTesting(false)
             if segments.isEmpty && !loadingSegments {
@@ -248,9 +252,96 @@ struct RecordingsView: View {
             .padding(10)
             .allowsHitTesting(false)
         }
+    }
+
+    private var recordingStage: some View {
+        recordingVideo
         .aspectRatio(16/9, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))
+        .overlay(alignment: .topTrailing) {
+            Button { fullscreen = true; Haptics.tap() } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(.black.opacity(0.72), in: Circle())
+            }
+            .accessibilityLabel("Registrazione a schermo intero")
+            .padding(12)
+        }
+    }
+
+    private var fullscreenPlayer: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Color.black.ignoresSafeArea()
+                recordingVideo
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                VStack(spacing: 0) {
+                    HStack(spacing: 12) {
+                        Button { fullscreen = false } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 17, weight: .bold))
+                                .frame(width: 42, height: 42)
+                                .background(.black.opacity(0.75), in: Circle())
+                        }
+                        .accessibilityLabel("Chiudi schermo intero")
+                        Text(camera?.name ?? "Registrazioni")
+                            .font(.subheadline.bold()).lineLimit(1)
+                        Spacer(minLength: 0)
+                        Button { toggleRecordingAudio() } label: {
+                            Image(systemName: audioOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                                .frame(width: 42, height: 42)
+                                .background(.black.opacity(0.75), in: Circle())
+                        }
+                        .accessibilityLabel(audioOn ? "Disattiva audio" : "Attiva audio")
+                    }
+                    .padding(12)
+                    .background(.black.opacity(0.45))
+                    Spacer(minLength: 0)
+                    VStack(spacing: 10) {
+                        HStack {
+                            Text(clock(seconds)).font(.caption.monospacedDigit().bold())
+                            Spacer()
+                            Menu {
+                                ForEach([0.5, 1.0, 2.0, 4.0, 8.0, 16.0], id: \.self) { value in
+                                    Button("\(value.formatted())×") {
+                                        speed = value
+                                        if player.rate > 0 { player.rate = Float(value) }
+                                    }
+                                }
+                            } label: {
+                                Label("\(speed.formatted())×", systemImage: "speedometer")
+                                    .font(.caption.bold())
+                            }
+                        }
+                        timelineTrack
+                        HStack(spacing: 24) {
+                            Spacer()
+                            Button { play(at: max(0, seconds - 10)) } label: {
+                                Image(systemName: "gobackward.10").font(.title2)
+                            }
+                            Button { togglePlayback() } label: {
+                                Image(systemName: playing ? "pause.fill" : "play.fill")
+                                    .font(.title2.bold()).frame(width: 48, height: 48)
+                                    .background(Theme.accent, in: Circle())
+                            }
+                            Button { play(at: min(86399, seconds + 10)) } label: {
+                                Image(systemName: "goforward.10").font(.title2)
+                            }
+                            Spacer()
+                        }
+                        .disabled(segments.isEmpty)
+                    }
+                    .padding(14)
+                    .background(.black.opacity(0.78))
+                }
+                .foregroundStyle(.white)
+            }
+        }
+        .preferredColorScheme(.dark)
+        .statusBarHidden(true)
     }
 
     private var playbackControls: some View {
@@ -274,9 +365,7 @@ struct RecordingsView: View {
             }
             HStack(spacing: 8) {
                 Button {
-                    audioOn.toggle()
-                    player.isMuted = !audioOn
-                    Haptics.tap()
+                    toggleRecordingAudio()
                 } label: {
                     Label(audioOn ? "Audio attivo" : "Audio spento",
                           systemImage: audioOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
@@ -331,8 +420,21 @@ struct RecordingsView: View {
     private func togglePlayback() {
         guard !segments.isEmpty else { return }
         Haptics.tap()
+        if seekingPlayback {
+            playRequest = UUID()
+            player.pause()
+            seekingPlayback = false
+            playing = false
+            return
+        }
         if playing { player.pause(); playing = false }
         else { player.play(); player.rate = Float(speed); playing = true }
+    }
+
+    private func toggleRecordingAudio() {
+        audioOn.toggle()
+        player.isMuted = !audioOn
+        Haptics.tap()
     }
 
     private var timelineCard: some View {
@@ -430,17 +532,21 @@ struct RecordingsView: View {
             .gesture(DragGesture(minimumDistance: 0)
                 .onChanged { value in
                     guard !segments.isEmpty else { return }
-                    if !dragging { dragging = true; player.pause(); playing = false }
+                    if !dragging {
+                        dragging = true
+                        playRequest = UUID()
+                        seekingPlayback = false
+                        player.pause()
+                        playing = false
+                    }
                     seconds = max(0, min(86399, Double(value.location.x / width) * 86400))
-                    showPreview(seconds, force: previewPlayer.currentItem == nil)
+                    showPreview(seconds)
                 }
                 .onEnded { _ in
                     guard dragging else { return }
                     dragging = false
                     previewUnavailable = false
-                    previewPlayer.pause()
-                    previewPlayer.replaceCurrentItem(with: nil)
-                    previewName = ""
+                    preview.clear()
                     play(at: seconds)
                 })
             .accessibilityElement(children: .ignore)
@@ -632,42 +738,41 @@ struct RecordingsView: View {
 
     private func playSegment(_ segment: NvrSegment, offset: Double) {
         guard let url = store.endpoint(segment.url) else { return }
+        let request = UUID()
+        playRequest = request
+        player.pause()
+        player.currentItem?.cancelPendingSeeks()
         if activeName != segment.name {
             activeName = segment.name
             player.replaceCurrentItem(with: AVPlayerItem(url: url))
         }
-        player.seek(to: CMTime(seconds: offset, preferredTimescale: 600))
         player.isMuted = !audioOn
-        player.play()
-        player.rate = Float(speed)
-        playing = true
+        playing = false
+        seekingPlayback = true
+        let tolerance = CMTime(seconds: 0.25, preferredTimescale: 600)
+        player.seek(to: CMTime(seconds: offset, preferredTimescale: 600),
+                    toleranceBefore: tolerance, toleranceAfter: tolerance) { finished in
+            DispatchQueue.main.async {
+                guard playRequest == request else { return }
+                seekingPlayback = false
+                guard finished else { return }
+                player.playImmediately(atRate: Float(speed))
+                playing = true
+            }
+        }
     }
 
-    private func showPreview(_ value: Double, force: Bool = false) {
+    private func showPreview(_ value: Double) {
         let target = dayStart + value
         guard let segment = segments.first(where: { $0.start <= target && target < $0.start + $0.dur }) else {
             previewUnavailable = true
-            previewPlayer.pause()
-            previewPlayer.replaceCurrentItem(with: nil)
-            previewName = ""
+            if preview.player.currentItem != nil { preview.clear() }
             return
         }
         previewUnavailable = false
-        guard force || Date().timeIntervalSince(lastPreview) > 0.4,
-              let url = store.endpoint(segment.url) else { return }
-        lastPreview = Date()
+        guard let url = store.endpoint(segment.url) else { return }
         let offset = max(0, min(segment.dur - 0.1, dayStart + value - segment.start))
-        if previewName != segment.name {
-            previewName = segment.name
-            previewPlayer.replaceCurrentItem(with: AVPlayerItem(url: url))
-        }
-        previewPlayer.isMuted = true
-        // Durante lo scorrimento è sufficiente un fotogramma vicino: la ricerca esatta
-        // costringe il decoder a rileggere molti frame, soprattutto andando indietro.
-        previewPlayer.seek(to: CMTime(seconds: offset, preferredTimescale: 600),
-                           toleranceBefore: CMTime(seconds: 0.5, preferredTimescale: 600),
-                           toleranceAfter: CMTime(seconds: 0.5, preferredTimescale: 600))
-        previewPlayer.play()
+        preview.request(name: segment.name, url: url, offset: offset)
     }
 
     private func loadDays() async {
@@ -679,9 +784,11 @@ struct RecordingsView: View {
         segments = []
         recordingEvents = []
         noiseBins = [:]
+        playRequest = UUID()
         player.pause()
-        previewPlayer.pause()
+        preview.clear()
         playing = false
+        seekingPlayback = false
         do {
             let loaded = try await store.days(for: camera)
             guard cameraId == selectedCamera && loadRequest == requestID else { return }
@@ -717,9 +824,11 @@ struct RecordingsView: View {
         let requestID = UUID()
         loadRequest = requestID
         loadingSegments = true
+        playRequest = UUID()
         player.pause()
-        previewPlayer.pause()
+        preview.clear()
         playing = false
+        seekingPlayback = false
         previewUnavailable = false
         segments = []
         recordingEvents = []
@@ -736,7 +845,6 @@ struct RecordingsView: View {
                 .sorted { $0.start > $1.start }
             guard loadRequest == requestID else { return }
             activeName = ""
-            previewName = ""
             eventLimit = 8
             if armedJump != nil { seekToArmedJump() }
             else if let first = segments.first { play(at: max(0, first.start - dayStart)) }

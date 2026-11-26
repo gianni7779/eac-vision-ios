@@ -2,6 +2,12 @@
 
 Client iOS per **EAC Vision Home Assistant** e **EAC Vision AI Home Assistant**. Interfaccia rinnovata in stile app moderna: navigazione a schede in basso (Live, Registrazioni, Eventi, Impostazioni), sfondo sfumato blu scuro, pannelli in vetro, chip di comando e feedback aptico. Mostra le camere ONVIF selezionate nella vista, live HLS con audio nella vista singola, registrazioni H24 con anteprima durante lo scorrimento e gli eventi della versione AI.
 
+## Novità 1.2.6
+
+- Scorrimento delle registrazioni più regolare anche all'indietro: l'anteprima mostra un fotogramma fermo e processa solo l'ultima posizione richiesta, senza riprodurre un secondo video durante il trascinamento.
+- Al rilascio della linea il video riparte dopo il salto completato; i salti precedenti vengono annullati.
+- Pulsante per aprire le registrazioni a schermo intero, con linea del tempo, audio, velocità e comandi di riproduzione accessibili.
+
 ## Novità 1.2.5
 
 - Collegamento iniziale a EAC Vision NVR con IP o URL e password per le app; resta disponibile la modalità solo live con URL HLS aggiunti sull'iPhone.
