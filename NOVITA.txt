@@ -1,13 +1,17 @@
-EAC VISION PER IPHONE - VERSIONE 1.2.4
+EAC VISION PER IPHONE - VERSIONE 1.2.5
 Electronic Ascione Company
 ====================================
 
 INSTALLAZIONE
-  EACVision-1.2.4-unsigned.ipa e il pacchetto corrente.
+  EACVision-1.2.5-unsigned.ipa e il pacchetto corrente.
   L'IPA non e firmato: per installarlo bisogna firmarlo con Xcode,
   AltStore, SideStore o Sideloadly.
 
 NOVITA
+  - Il collegamento iniziale chiede IP o URL e password per le app di EAC Vision NVR.
+  - In alternativa puoi aggiungere telecamere HLS sul telefono per la sola visione.
+  - Tieni premuta una camera nella griglia per attivarne l'audio; la scelta rimane
+    salvata quando chiudi l'app. "Sposta" permette di scambiare le posizioni.
   - Live: nomi delle telecamere e orario si possono mostrare o nascondere
     separatamente in Impostazioni > Visualizzazione.
   - Registrazioni: anteprima piu leggera mentre scorri la linea delle 24 ore;

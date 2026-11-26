@@ -115,6 +115,7 @@ final class NvrStore: ObservableObject {
     @Published var layoutName = "4 riquadri"
     @Published var error = ""
     @Published var connected = false
+    @Published var gridAudioCameraId = UserDefaults.standard.string(forKey: "nvr-grid-audio") ?? ""
     @Published var availableViews: [NvrView] = []
     @Published var selectedViewId = UserDefaults.standard.string(forKey: "nvr-view-id") ?? ""
     @Published var address = UserDefaults.standard.string(forKey: "nvr-address") ?? ""
@@ -243,7 +244,26 @@ final class NvrStore: ObservableObject {
         viewName = view.name
         layoutName = view.layout == "L16" ? "16 riquadri" : view.layout == "L9" ? "9 riquadri" : "4 riquadri"
         let byId = Dictionary(uniqueKeysWithValues: cameras.map { ($0.id, $0) })
-        return view.slots.compactMap { byId[$0] }
+        let visible = view.slots.compactMap { byId[$0] }
+        let saved = UserDefaults.standard.stringArray(forKey: "nvr-grid-order-\(view.id)") ?? []
+        guard !saved.isEmpty else { return visible }
+        let positions = Dictionary(uniqueKeysWithValues: saved.enumerated().map { ($0.element, $0.offset) })
+        return visible.enumerated().sorted {
+            (positions[$0.element.id] ?? (saved.count + $0.offset)) <
+            (positions[$1.element.id] ?? (saved.count + $1.offset))
+        }.map { $0.element }
+    }
+
+    func toggleGridAudio(_ cameraId: String) {
+        gridAudioCameraId = gridAudioCameraId == cameraId ? "" : cameraId
+        UserDefaults.standard.set(gridAudioCameraId, forKey: "nvr-grid-audio")
+    }
+
+    func swapGridCameras(_ firstId: String, _ secondId: String) {
+        guard let first = cameras.firstIndex(where: { $0.id == firstId }),
+              let second = cameras.firstIndex(where: { $0.id == secondId }) else { return }
+        cameras.swapAt(first, second)
+        UserDefaults.standard.set(cameras.map(\.id), forKey: "nvr-grid-order-\(selectedViewId)")
     }
 
     func chooseView(_ id: String) {

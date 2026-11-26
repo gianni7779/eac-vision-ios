@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct EACVisionApp: App {
     @StateObject private var store = NvrStore()
+    @AppStorage("eac-local-mode") private var localMode = false
 
     var body: some Scene {
         WindowGroup {
@@ -10,7 +11,7 @@ struct EACVisionApp: App {
                 .environmentObject(store)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
-                .onOpenURL { store.handleDeepLink($0) }
+                .onOpenURL { localMode = false; store.handleDeepLink($0) }
         }
     }
 }
@@ -24,10 +25,13 @@ enum AppTab: Hashable {
 
 struct RootView: View {
     @EnvironmentObject private var store: NvrStore
+    @AppStorage("eac-local-mode") private var localMode = false
 
     var body: some View {
         Group {
-            if store.connected {
+            if localMode {
+                NavigationStack { LocalCamerasView() }
+            } else if store.connected {
                 TabView(selection: $store.selectedTab) {
                     NavigationStack { CamerasView() }
                         .tabItem { Label("Live", systemImage: "square.grid.2x2.fill") }

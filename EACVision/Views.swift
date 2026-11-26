@@ -9,6 +9,8 @@ struct CamerasView: View {
     @State private var openedCamera: NvrCamera?
     @State private var tourRequested = false
     @State private var autoTourStarted = false
+    @State private var reordering = false
+    @State private var moveSource: String?
     @AppStorage("eac-tour-start") private var startTourOnOpen = false
     @AppStorage("eac-grid-cols") private var gridCols = 2
     @AppStorage("eac-show-camera-names") private var showCameraNames = true
@@ -26,17 +28,33 @@ struct CamerasView: View {
                 Spacer()
             } else {
                 ScrollView {
+                    if reordering {
+                        Text(moveSource == nil ? "Tocca la telecamera da spostare" : "Tocca la nuova posizione")
+                            .font(.footnote).foregroundStyle(Theme.accent).padding(.vertical, 8)
+                    }
                     LazyVGrid(columns: gridColumns, spacing: 8) {
                         ForEach(store.cameras) { camera in
                             Button {
                                 Haptics.tap()
-                                tourRequested = false
-                                openedCamera = camera
+                                if reordering {
+                                    if let source = moveSource {
+                                        store.swapGridCameras(source, camera.id)
+                                        moveSource = nil
+                                    } else { moveSource = camera.id }
+                                } else {
+                                    tourRequested = false
+                                    openedCamera = camera
+                                }
                             } label: {
-                                CameraTile(camera: camera, live: (store.cameras.firstIndex(of: camera) ?? 0) < 4,
+                                CameraTile(camera: camera, live: (store.cameras.firstIndex(of: camera) ?? 0) < 4 || store.gridAudioCameraId == camera.id,
                                            showName: showCameraNames)
+                                    .overlay(RoundedRectangle(cornerRadius: 14)
+                                        .stroke(moveSource == camera.id ? Theme.accent : .clear, lineWidth: 3))
                             }
                             .buttonStyle(PressableButtonStyle())
+                            .highPriorityGesture(LongPressGesture(minimumDuration: 0.55).onEnded { _ in
+                                if !reordering { store.toggleGridAudio(camera.id); Haptics.success() }
+                            })
                         }
                     }
                     .padding(10)
@@ -123,6 +141,12 @@ struct CamerasView: View {
                         }
                     } label: {
                         Chip(title: "Griglia \(gridCols)", symbol: "slider.horizontal.3")
+                    }
+                    Button {
+                        reordering.toggle()
+                        moveSource = nil
+                    } label: {
+                        Chip(title: reordering ? "Fine" : "Sposta", symbol: "arrow.left.arrow.right")
                     }
                     Chip(title: store.layoutName, symbol: "rectangle.grid.2x2")
                 }
@@ -211,7 +235,12 @@ private struct CameraTile: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.line))
         .onAppear { if live { startStream() } }
+        .onChange(of: live) { _, enabled in
+            if enabled { startStream() }
+            else { player.pause(); player.replaceCurrentItem(with: nil); streamReady = false }
+        }
         .onDisappear { player.pause(); player.replaceCurrentItem(with: nil) }
+        .onChange(of: store.gridAudioCameraId) { _, id in player.isMuted = id != camera.id }
         .onReceive(Timer.publish(every: 3, on: .main, in: .common).autoconnect()) { _ in
             if !streamReady { snapshotTick += 1 }
         }
@@ -228,6 +257,9 @@ private struct CameraTile: View {
 
     private var statusBadge: some View {
         HStack(spacing: 4) {
+            if store.gridAudioCameraId == camera.id {
+                Image(systemName: "speaker.wave.2.fill")
+            }
             if recordingBadge {
                 Circle().fill(.white).frame(width: 4, height: 4)
             }
@@ -244,7 +276,7 @@ private struct CameraTile: View {
         if streamMode == 1 { query.append(URLQueryItem(name: "mode", value: "ts")) }
         guard let url = store.endpoint("/eacnvr/hls.m3u8", query: query) else { return }
         streamReady = false
-        player.isMuted = true
+        player.isMuted = store.gridAudioCameraId != camera.id
         player.replaceCurrentItem(with: AVPlayerItem(url: url))
         player.play()
     }
@@ -989,6 +1021,7 @@ struct ConnectionView: View {
     @State private var busy = false
     @State private var error = ""
     @State private var confirmDisconnect = false
+    @AppStorage("eac-local-mode") private var localMode = false
     @AppStorage("eac-tour-seconds") private var tourSeconds = 10
     @AppStorage("eac-tour-start") private var startTourOnOpen = false
     @AppStorage("eac-show-camera-names") private var showCameraNames = true
@@ -1000,14 +1033,14 @@ struct ConnectionView: View {
                 brandHeader
                 SectionCard(title: "COLLEGA IL REGISTRATORE", symbol: "antenna.radiowaves.left.and.right") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Indirizzo Home Assistant o Tailscale").font(.subheadline.bold())
-                        TextField("Indirizzo del dispositivo HA", text: $address)
+                        Text("IP o URL di EAC Vision NVR").font(.subheadline.bold())
+                        TextField("IP, Tailscale o URL HTTPS", text: $address)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
                             .keyboardType(.URL)
                             .padding(12).background(Theme.panel2, in: RoundedRectangle(cornerRadius: 10))
                             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line))
-                        Text("Codice delle app").font(.subheadline.bold())
-                        SecureField("Codice delle app", text: $key)
+                        Text("Password per le app").font(.subheadline.bold())
+                        SecureField("Password dall'NVR", text: $key)
                             .padding(12).background(Theme.panel2, in: RoundedRectangle(cornerRadius: 10))
                             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line))
                         connectButton
@@ -1023,6 +1056,20 @@ struct ConnectionView: View {
                                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line))
                             }
                         }
+                    }
+                }
+                SectionCard(title: "SOLO VISIONE", symbol: "video") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Aggiungi una telecamera HLS da vedere direttamente su questo iPhone, senza registrarla. Per ONVIF o RTSP usa EAC Vision NVR.")
+                            .foregroundStyle(Theme.dim)
+                        Button {
+                            localMode = true
+                        } label: {
+                            Label("Aggiungi telecamera (solo live)", systemImage: "plus.circle.fill")
+                                .frame(maxWidth: .infinity)
+                                .padding(12).background(Theme.panel2, in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(PressableButtonStyle())
                     }
                 }
                 if store.connected {
