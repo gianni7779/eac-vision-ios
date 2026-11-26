@@ -1,36 +1,20 @@
-EAC VISION PER IPHONE - VERSIONE 1.2.0
+EAC VISION PER IPHONE - VERSIONE 1.2.4
 Electronic Ascione Company
-==========================================
+====================================
 
-COSA E CAMBIATO RISPETTO ALLA 1.1.6
+INSTALLAZIONE
+  EACVision-1.2.4-unsigned.ipa e il pacchetto corrente.
+  L'IPA non e firmato: per installarlo bisogna firmarlo con Xcode,
+  AltStore, SideStore o Sideloadly.
 
-Nuova interfaccia (senza rifare l'app da capo: la logica e i collegamenti sono gli stessi)
-  - Barra di navigazione in basso con 4 schede: Live, Registrazioni, Eventi, Impostazioni
-  - Sfondo sfumato blu scuro, pannelli traslucidi in vetro, chip di comando arrotondati
-  - Piccoli effetti di pressione e feedback aptico sui tasti
-  - Badge piu leggibili sulle camere: REC (rosso, in registrazione), LIVE, SNAP (istantanea)
+NOVITA
+  - Live: nomi delle telecamere e orario si possono mostrare o nascondere
+    separatamente in Impostazioni > Visualizzazione.
+  - Registrazioni: anteprima piu leggera mentre scorri la linea delle 24 ore;
+    il lettore di anteprima viene liberato al termine dello scorrimento.
+  - Le versioni aggiornate dell'add-on EAC Vision servono i vecchi MP4 H.265
+    all'iPhone con identificatore compatibile, senza ricodificare il video.
+  - La notifica di una telecamera apre direttamente il suo live nell'app,
+    con l'add-on Home Assistant aggiornato e la connessione gia configurata.
 
-Nuove funzioni
-  - Griglia locale a 1, 2 o 3 colonne (menu "Griglia" sopra la griglia, oltre alle viste dell'NVR)
-  - "Foto" nella vista camera: salva l'istantanea nella Libreria foto del telefono
-  - "Condividi la foto" nel menu Altro della vista camera
-  - Eventi AI: filtri per tipo (persona, animale, veicolo, movimento) e per camera
-  - Eventi AI: percentuale di affidabilita e pulsante "Guarda" che apre le registrazioni
-    direttamente al momento dell'evento (5 secondi prima)
-  - Registrazioni: velocita di riproduzione fino a 16x (prima massimo 4x)
-  - Impostazioni: versione dell'app, nome del registratore, pulsante "Disconnetti"
-
-COME SI INSTALLA
-
-  Il file EACVision-1.2.0-unsigned.ipa NON e firmato: iOS non lo installa cosi com'e.
-  Per installarlo serve firmarlo, ad esempio:
-    - con AltStore / SideStore / Sideloadly sul tuo PC (usa il tuo Apple ID gratuito),
-    - o con Xcode su Mac (certificato di sviluppo Apple).
-  Dopo l'installazione, alla prima apertura: Impostazioni iOS > Generali > VPN e gestione
-  dispositivi > autorizza il profilo sviluppatore del tuo Apple ID.
-
-COLLEGAMENTO (INVARIATO)
-
-  In casa: IP o URL di Home Assistant (anche con :8123); l'app prova le porte 8766 e 8767.
-  Fuori casa: Tailscale con l'IP 100.x.y.z del dispositivo HA, oppure proxy HTTPS verso /eacnvr/.
-  Codice delle app: EAC Vision su Home Assistant > Impostazioni > PC, TV e telefono.
+Per tutte le funzioni, i collegamenti e i requisiti leggi README.md.
