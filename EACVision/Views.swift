@@ -11,6 +11,8 @@ struct CamerasView: View {
     @State private var autoTourStarted = false
     @AppStorage("eac-tour-start") private var startTourOnOpen = false
     @AppStorage("eac-grid-cols") private var gridCols = 2
+    @AppStorage("eac-show-camera-names") private var showCameraNames = true
+    @AppStorage("eac-show-clock") private var showClock = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,7 +33,8 @@ struct CamerasView: View {
                                 tourRequested = false
                                 openedCamera = camera
                             } label: {
-                                CameraTile(camera: camera, live: (store.cameras.firstIndex(of: camera) ?? 0) < 4)
+                                CameraTile(camera: camera, live: (store.cameras.firstIndex(of: camera) ?? 0) < 4,
+                                           showName: showCameraNames)
                             }
                             .buttonStyle(PressableButtonStyle())
                         }
@@ -86,6 +89,12 @@ struct CamerasView: View {
                     Text("Electronic Ascione Company").font(.system(size: 10)).foregroundStyle(Theme.dim)
                 }
                 Spacer(minLength: 4)
+                if showClock {
+                    Text(Date.now, style: .time)
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.dim)
+                        .accessibilityLabel("Ora attuale")
+                }
                 headerButton("clock.arrow.circlepath") { store.selectedTab = .recordings }
                 headerButton("arrow.clockwise") { Task { await store.refreshCameras() } }
                 Menu {
@@ -170,6 +179,7 @@ private struct CameraTile: View {
     @EnvironmentObject private var store: NvrStore
     let camera: NvrCamera
     let live: Bool
+    let showName: Bool
     @State private var player = AVPlayer()
     @State private var snapshotTick = 0
     @State private var streamReady = false
@@ -183,14 +193,16 @@ private struct CameraTile: View {
                 PlayerSurface(player: player, onReady: { streamReady = $0 })
                     .opacity(streamReady ? 1 : 0.01).allowsHitTesting(false)
             }
-            LinearGradient(colors: [.clear, .black.opacity(0.82)], startPoint: .center, endPoint: .bottom)
-                .allowsHitTesting(false)
-            HStack(spacing: 6) {
-                Circle().fill(camera.recording == true ? Color.red : Theme.accent).frame(width: 7, height: 7)
-                Text(camera.name).font(.system(size: 12, weight: .bold)).lineLimit(1)
+            if showName {
+                LinearGradient(colors: [.clear, .black.opacity(0.82)], startPoint: .center, endPoint: .bottom)
+                    .allowsHitTesting(false)
+                HStack(spacing: 6) {
+                    Circle().fill(camera.recording == true ? Color.red : Theme.accent).frame(width: 7, height: 7)
+                    Text(camera.name).font(.system(size: 12, weight: .bold)).lineLimit(1)
+                }
+                .shadow(color: .black, radius: 3)
+                .padding(9)
             }
-            .shadow(color: .black, radius: 3)
-            .padding(9)
             statusBadge
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .padding(8)
@@ -979,6 +991,8 @@ struct ConnectionView: View {
     @State private var confirmDisconnect = false
     @AppStorage("eac-tour-seconds") private var tourSeconds = 10
     @AppStorage("eac-tour-start") private var startTourOnOpen = false
+    @AppStorage("eac-show-camera-names") private var showCameraNames = true
+    @AppStorage("eac-show-clock") private var showClock = false
 
     var body: some View {
         ScrollView {
@@ -1012,6 +1026,12 @@ struct ConnectionView: View {
                     }
                 }
                 if store.connected {
+                    SectionCard(title: "VISUALIZZAZIONE", symbol: "rectangle.grid.2x2") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Mostra i nomi delle telecamere nella griglia", isOn: $showCameraNames)
+                            Toggle("Mostra l'orario nella schermata Live", isOn: $showClock)
+                        }
+                    }
                     SectionCard(title: "RONDA TELECAMERE", symbol: "play.square.stack") {
                         VStack(alignment: .leading, spacing: 10) {
                             Stepper("Cambia camera ogni \(tourSeconds) secondi", value: $tourSeconds, in: 5...120, step: 5)

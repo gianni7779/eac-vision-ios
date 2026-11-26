@@ -85,7 +85,7 @@ struct RecordingsView: View {
         .onChange(of: cameraId) { _, _ in Task { await loadDays() } }
         .onAppear { applyPendingJump(); if armedJump != nil { scheduleEventRetry() } }
         .onChange(of: store.pendingJump) { _, _ in applyPendingJump() }
-        .onReceive(Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()) { _ in
+        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
             guard !dragging, let segment = segments.first(where: { $0.name == activeName }),
                   player.currentItem != nil, player.currentTime().seconds.isFinite else { return }
             seconds = max(0, min(86399, segment.start - dayStart + player.currentTime().seconds))
@@ -98,6 +98,8 @@ struct RecordingsView: View {
         }
         .onDisappear {
             player.pause(); previewPlayer.pause(); playing = false
+            previewPlayer.replaceCurrentItem(with: nil)
+            previewName = ""
             dragging = false; previewUnavailable = false
             eventRetryTask?.cancel()
         }
@@ -412,12 +414,18 @@ struct RecordingsView: View {
                     let rect = CGRect(x: max(0, size.width * CGFloat(position) - 2), y: 10, width: 4, height: 20)
                     context.fill(Path(rect), with: .color(eventColor(event.label)))
                 }
-                let marker = max(0, min(size.width - 2, size.width * CGFloat(seconds / 86400)))
-                context.fill(Path(CGRect(x: marker, y: 5, width: 2, height: 29)), with: .color(.white))
-                context.fill(Path(ellipseIn: CGRect(x: max(0, marker - 6), y: 12, width: 14, height: 14)),
-                             with: .color(.white))
             }
             .frame(width: width, height: 40)
+            .overlay(alignment: .leading) {
+                let marker = max(0, min(width - 14, width * CGFloat(seconds / 86400) - 6))
+                ZStack {
+                    Rectangle().fill(.white).frame(width: 2, height: 29)
+                    Circle().fill(.white).frame(width: 14, height: 14)
+                }
+                .frame(width: 14, height: 40)
+                .offset(x: marker)
+                .allowsHitTesting(false)
+            }
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0)
                 .onChanged { value in
@@ -431,6 +439,8 @@ struct RecordingsView: View {
                     dragging = false
                     previewUnavailable = false
                     previewPlayer.pause()
+                    previewPlayer.replaceCurrentItem(with: nil)
+                    previewName = ""
                     play(at: seconds)
                 })
             .accessibilityElement(children: .ignore)
@@ -643,7 +653,7 @@ struct RecordingsView: View {
             return
         }
         previewUnavailable = false
-        guard force || Date().timeIntervalSince(lastPreview) > 0.2,
+        guard force || Date().timeIntervalSince(lastPreview) > 0.4,
               let url = store.endpoint(segment.url) else { return }
         lastPreview = Date()
         let offset = max(0, min(segment.dur - 0.1, dayStart + value - segment.start))
@@ -652,8 +662,11 @@ struct RecordingsView: View {
             previewPlayer.replaceCurrentItem(with: AVPlayerItem(url: url))
         }
         previewPlayer.isMuted = true
+        // Durante lo scorrimento è sufficiente un fotogramma vicino: la ricerca esatta
+        // costringe il decoder a rileggere molti frame, soprattutto andando indietro.
         previewPlayer.seek(to: CMTime(seconds: offset, preferredTimescale: 600),
-                           toleranceBefore: .zero, toleranceAfter: .zero)
+                           toleranceBefore: CMTime(seconds: 0.5, preferredTimescale: 600),
+                           toleranceAfter: CMTime(seconds: 0.5, preferredTimescale: 600))
         previewPlayer.play()
     }
 
